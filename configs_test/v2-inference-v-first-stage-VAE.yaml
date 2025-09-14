@@ -7,7 +7,7 @@ first_stage_config:
       #attn_type: "vanilla-xformers"
       double_z: true
       z_channels: 4
-      resolution: 224
+      resolution: 256
       in_channels: 3
       out_ch: 3
       ch: 128

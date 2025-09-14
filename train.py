@@ -1,162 +1,268 @@
-# ------------------------------------------------------------------------------#
-#
-# File name                 : train.py
-# Purpose                   : Main training loop for GMS
-# Usage                     : python train.py --config configs/experiment.yaml
-#
-# Authors                   : Talha Ahmed, Nehal Ahmed Shaikh, Hassan Mohy-ud-Din
-# Email                     : 24100033@lums.edu.pk, 202410001@lums.edu.pk,
-#                             hassan.mohyuddin@lums.edu.pk
-#
-# Last Modified             : June 23, 2025
-# ------------------------------------------------------------------------------#
-
-# --------------------------- Module imports ----------------------------------#
-import os, time, yaml, torch, logging, argparse
-
-import numpy            as np
-
-from tqdm               import tqdm
-from torch.utils.data   import DataLoader
-from monai.losses.dice  import DiceLoss
-
-from data               import *
-from utils              import *
-from configs            import config
-from networks           import *
-
-from diffusers          import AutoencoderTiny # (mit-han-lab/dc-ae-f32c32-sana-1.0-diffusers)
-from tensorboardX       import SummaryWriter
+# Basic Package
+import torch
+import argparse
+import numpy as np
+import yaml
+import logging
+import time
+import os
+from tqdm import tqdm
+from torch.utils.data import DataLoader
+from monai.losses.dice import DiceLoss
 
 
-# --------------------- Main training function ---------------------------------#
+# Own Package
+from data.image_dataset import Image_Dataset
+from tools.utils import *
+from tools.get_logger import open_log
+from tools.load_ckpt import * # contains function save_checkpoint
+from tools.lr_scheduler import LinearWarmupCosineAnnealingLR
+from tools.metrics      import *
+from modules.latent_mapping_model import ResAttnUNet_DS
+from modules.models.distributions import DiagonalGaussianDistribution
+from modules.sft_lmm import *
+from modules.guidance import *
+
+from tensorboardX import SummaryWriter
+
+# Note the encoder output is AutoeencoderTinyOuput(latents = ouptut) and Decoder is DecoderOutput(sample = output)
+
+
+def get_multi_loss(criterion, out_dict, label, is_ds=True, key_list=None):
+    keys = key_list if key_list is not None else list(out_dict.keys())
+    if is_ds:
+        multi_loss = sum([criterion(out_dict[key], label) for key in keys])
+    else:
+        multi_loss = criterion(out_dict["out"], label)
+    return multi_loss
+
+def get_vae_encoding_mu_and_sigma(encoder_posterior, scale_factor):
+    if isinstance(encoder_posterior, DiagonalGaussianDistribution):
+        mean, logvar = encoder_posterior.mu_and_sigma()
+        
+    else:
+        raise NotImplementedError(
+            f"encoder_posterior of type '{type(encoder_posterior)}' not yet implemented"
+        )
+    return scale_factor * mean, logvar
+
+def vae_decode(vae_model, pred_mean, scale_factor):
+    z = 1.0 / scale_factor * pred_mean
+    pred_seg = vae_model.decode(z).sample  # [CHANGED] --> has channels = 3 according to config
+    pred_seg = torch.mean(pred_seg, dim=1, keepdim=True)  # [CHANGED] --> Taking mean across channels dimension resulting in 1 channel
+    pred_seg = torch.clamp((pred_seg + 1.0) / 2.0, min=0.0, max=1.0)  # (B, 1, H, W) # [CHANGED] --> Bringing the range to (0, 1) as per Kvasir-SEG dataset
+    return pred_seg
+
+# [CHANGED] --> added the path to the Kvasir-SEG config file
+def arg_parse() -> argparse.ArgumentParser.parse_args:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--config",
+        default="./configs/kvasir-instrument_train.yaml",
+        type=str,
+        help="load the config file",
+    )
+    args   = parser.parse_args()
+    return args
+
 def run_trainer() -> None:
-    """
-    Complete training loop for the latent diffusion segmentation pipeline.
-    Loads config, initializes logger, datasets, models, optimizers, scheduler,
-    runs training/validation, and handles checkpointing.
-    """
-    # ------------- Parse args & flatten config ---------------------------------------#
-    args = argparse.Namespace(config = 'config.py')
-    # Dynamically patch snapshot and log paths with timestamp
-    os.makedirs(SNAPSHOT_PATH, exist_ok = True)
-    os.makedirs(LOG_PATH, exist_ok = True)
+    args = arg_parse()
+    configs = yaml.load(open(args.config), Loader=yaml.FullLoader)
+    # time.strftime("%Y%m%d%H%M", time.localtime(time.time()))
+    configs["snapshot_path"] = os.path.join(
+        configs["snapshot_path"],
+        'epochs_' + str(configs["epochs"]),
+    )
 
-    # ------------- Hardware, seed & precision -------------------------------------------#
-    gpus = ",".join([str(i) for i in GPUS])
-    os.environ["CUDA_VISIBLE_DEVICES"] = gpus
-    seed_reproducer(SEED)
-    np_dtype, torch_dtype = get_precision_dtypes(PRECISION)
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-    # ------------- Logging setup ---------------------------------------------#
-    open_log(args, config)
-    logging.info(f"Using config for Train: {args.config}")
-    CONFIG_VARS = {k: v for k, v in config.__dict__.items() if k.isupper()}
-    print_options(CONFIG_VARS)
+    configs["log_path"] = os.path.join(configs["snapshot_path"], "logs")
 
-    # ------------- TensorBoard setup -----------------------------------------#
-    writer  = SummaryWriter(LOG_PATH)
-    ds_list = ["level2", "level1", "out"]  # Multi-scale levels
+    # Output folder and save fig folder
+    os.makedirs(configs["snapshot_path"], exist_ok=True)
+    os.makedirs(configs["log_path"], exist_ok=True)
 
-    # ------------- Datasets/Dataloaders -------------------------------------#
-    train_dataset = ImageDataset(PICKLE_FILE_PATH, stage="train", precision=PRECISION)
-    valid_dataset = ImageDataset(PICKLE_FILE_PATH, stage="test", precision=PRECISION)
+    # Set GPU ID
+    if torch.cuda.is_available():
+        gpus = ",".join([str(i) for i in configs["GPUs"]])
+        os.environ["CUDA_VISIBLE_DEVICES"] = gpus
 
-    train_loader = DataLoader(
+    # Fix seed (for repeatability)
+    seed_reproducer(configs["seed"])
+
+    # Open log file
+    open_log(args, configs)
+    logging.info(configs)
+    print_options(configs)
+
+    # Define summary writer
+    writer = SummaryWriter(configs["log_path"])
+    ds_list = ["level2", "level1", "out"]
+
+    # Get data loader
+    train_dataset = Image_Dataset(configs["pickle_file_path"], stage="train", excel = False)
+    valid_dataset = Image_Dataset(configs["pickle_file_path"], stage="test", excel = False)
+    train_dataloader = DataLoader(
         train_dataset,
-        batch_size            =  BATCH_SIZE,
-        pin_memory            =  True,
-        drop_last             =  True,
-        shuffle               =  True,
+        batch_size=configs["batch_size"],
+        pin_memory=True,
+        drop_last=True,
+        shuffle=True,
     )
-    valid_loader = DataLoader(
+    valid_dataloader = DataLoader(
         valid_dataset,
-        batch_size            = BATCH_SIZE,
-        pin_memory            = True,
-        drop_last             = False,
-        shuffle               = False,
+        batch_size=configs["batch_size"],
+        pin_memory=True,
+        drop_last=False,
+        shuffle=False,
     )
 
-    # ------------- Model definitions ----------------------------------------#
-    mapping_model = get_cuda(ResAttnUNet_DS(**MODEL_PARAMS)).to(dtype=torch_dtype)
+    # Define modules
+    skff_module = None
+    if configs['guidance_method']:
+        guidance_channels_dict = {'edge': 3, 'wavelet': 3, 'dino': 384}
 
-    # Modular VAE loading (dtype, device, freeze are all config-controlled)
-    vae_model = load_pretrained_model(
-        model_cls               =   AutoencoderTiny,
-        pretrained_name_or_path =   "madebyollin/taesd",
-        dtype                   =   torch_dtype,
-        device                  =   "cuda",
-        freeze                  =   True,
-    )
-    scale_factor = VAE_SCALE_FACTOR
+        mapping_model = SFT_UNet_DS(in_channels       = configs['in_channel'],
+                                    out_channels      = configs['out_channels'],
+                                    guidance_channels = guidance_channels_dict[configs['guidance_method']]).to(device)
 
-    # ------------- Optimizer & scheduler ------------------------------------#
-    optimizer = torch.optim.AdamW(mapping_model.parameters(), lr=LR)
+        if configs['guidance_method'] == 'wavelet':
+            skff_module = SKFF().to(device)
+            skff_module.train()
+    else:
+        mapping_model = ResAttnUNet_DS(
+            in_channel=configs["in_channel"],
+            out_channels=configs["out_channels"],
+            num_res_blocks=configs["num_res_blocks"],
+            ch=configs["ch"],
+            ch_mult=configs["ch_mult"],
+            ).to(device)
+
+    mapping_model.train()
+    param_groups = list(mapping_model.parameters())
+
+    # Getting tiny-vae (with residual_autoencoding) default: frozen and eval
+    vae_train = True
+    if configs['vae_model'] == 'tiny_vae':
+        logging.info("Initializing TinyVAE")
+        vae_model = get_tiny_autoencoder(train = False)
+    else:
+        logging.info("Initializing LiteVAE")
+        tiny_vae  = get_tiny_autoencoder(train = False) # for the segmentation latent and decoding at the end.
+        vae_model = get_lite_vae(train = vae_train, model_version = configs['vae_model'])
+
+    scale_factor = 1.0 # default
+    # Define optimizers
+
+    if vae_train:
+        param_groups += list(vae_model.parameters())
+        logging.info("Training both mapping model and VAE model")
+
+    if skff_module is not None:
+        param_groups += list(skff_module.parameters())
+        logging.info('Training SKFF Module')
+        logging.info(f"SKFF Module trainable params: {count_params(skff_module)} out of {sum(p.numel() for p in skff_module.parameters())}")
+
+    logging.info(f"Mapping Model trainable params: {count_params(mapping_model)} out of {sum(p.numel() for p in mapping_model.parameters())}")
+    logging.info(f"VAE Model trainable params: {count_params(vae_model)} out of {sum(p.numel() for p in vae_model.parameters())}")
+
+    optimizer = torch.optim.AdamW(param_groups, lr=configs["lr"])
     scheduler = LinearWarmupCosineAnnealingLR(
-        optimizer, warmup_epochs = 5, max_epochs = EPOCHS
+        optimizer, warmup_epochs=5, max_epochs=configs["epochs"]
     )
 
-    # ------------- Loss functions -------------------------------------------#
-    mse_loss  = torch.nn.MSELoss(reduction = "mean")
-    dice_loss = DiceLoss()
+    # Define loss functions
+    mse_loss = torch.nn.MSELoss(reduction="mean")
+    dice_loss = DiceLoss() # for the final predicted mask
 
-    # ------------- Training/Validation state --------------------------------#
-    iter_num                = 0
-    best_valid_loss         = np.inf
-    best_valid_loss_rec     = np.inf
-    best_valid_dice         = 0
-    best_valid_dice_epoch   = 0
-    best_valid_loss_dice    = np.inf
+    # For Tensorboard Visualization
+    iter_num = 0
+    best_valid_loss = np.inf
+    best_valid_loss_rec = np.inf
+    best_valid_dice = 0
+    best_valid_dice_epoch = 0
+    best_valid_loss_dice = np.inf
 
-    ramup_length = 15 # for the weight for loss dice
-    w2           = W_DICE  # inital value for weight of loss dice
-
-    # =========================================================================
-    #                               TRAINING LOOP
-    # =========================================================================
-    for epoch in range(1, EPOCHS + 1):
+    # Network training
+    for epoch in range(1, configs["epochs"] + 1):
         epoch_start_time = time.time()
         mapping_model.train()
-        vae_model.eval() if VAE_MODE["eval"] else vae_model.train()
-        T_loss, T_loss_Rec, T_loss_Dice = [], [], []
-        T_loss_valid, T_loss_Rec_valid, T_loss_Dice_valid, T_Dice_valid = [], [], [], []
+        vae_model.train() if vae_train else vae_model.eval()
+        tiny_vae.eval() if configs['vae_model'] != 'tiny_vae' else None
 
-        # =================== Training phase =================== #
-        for batch_data in tqdm(train_loader, desc=f"Train (epoch {epoch})"):
-            img_rgb = 2.0 * batch_data["img"] - 1.0
-            img_rgb = img_rgb / 255.0 # [ADDED] V.V.V Imp!  --> SCALE CORRECTION
-            seg_raw = batch_data["seg"].permute(0, 3, 1, 2) / 255.0
-            seg_rgb = 2.0 * seg_raw - 1.0
-            seg_img = torch.mean(seg_raw, dim = 1, keepdim = True)
-            name    = batch_data["name"]
+        T_loss = []
+        T_loss_Rec = []
+        T_loss_Dice = []
+        T_loss_valid = []
+        T_loss_Rec_valid = []
+        T_loss_Dice_valid = []
+        T_Dice_valid = []
 
-            img_latent_mean_aug = vae_model.encode(get_cuda(img_rgb)).latents
-            seg_latent_mean     = vae_model.encode(get_cuda(seg_rgb)).latents
+        ### Training phase
+        for batch_data in tqdm(train_dataloader, desc="Train: "):
+            # [CHANGED] --> In case the vae model is lite_vae, the haar transform expects (0, 1) or (0, 255) so we will scale the input accordingly
+            # Note: no change needed regarding the segmentation as it is being used by tiny vae.
+            img_rgb = batch_data['img'].to(device)
+            img_rgb = img_rgb / 255.0 # [CHANGED] V.V.V Imp!  --> SCALE CORRECTION
 
-            out_latent_mean_dict = mapping_model(img_latent_mean_aug)
+            if configs['vae_model'] == 'tiny_vae':
+                img_rgb = 2. * img_rgb - 1.
 
-            # w2 = gaussian_rampup(epoch, ramup_length)
-            # print(f'w2 value: {w2}')
+            seg_raw = batch_data['seg'].to(device)
+            seg_raw = seg_raw.permute(0, 3, 1, 2) / 255.0
+            seg_rgb = 2. * seg_raw - 1.
+            # [CHANGED] --> Taking mean across channels dimension resulting in 1 channel which matches the channel dimension
+            # of pred_seg gotten from the decoder. Same thing in Validation
+            seg_img = torch.mean(seg_raw, dim=1, keepdim=True).to(device)
+            name = batch_data["name"]
 
-            loss_Rec             = W_REC * get_multi_loss( # instead of W_REC
+            if configs['vae_model'] == 'tiny_vae':
+                img_latent_mean_aug, seg_latent_mean = (
+                    vae_model.encode(img_rgb).latents,
+                    vae_model.encode(seg_rgb).latents,
+                )
+            else:
+                img_latent_mean_aug, seg_latent_mean = (
+                    vae_model(img_rgb),
+                    tiny_vae.encode(seg_rgb).latents,
+                )
+
+            # get guidance image for the LMM
+            if configs['guidance_method'] and configs['guidance_method'] != 'dino':
+                with torch.no_grad():
+                    guidance_image = prepare_guidance(img_rgb, mode = configs['guidance_method'])
+
+                if configs['guidance_method'] == 'wavelet' and skff_module is not None:
+                    guidance_image = skff_module(guidance_image) # (B, 3, 112, 112)
+
+            elif configs['guidance_method'] and configs['guidance_method'] == 'dino':
+                guidance_image = None
+
+            # latent matching [CHANGED] --> recieves the grountruth latent mask representation and predicted and computes mse loss
+            out_latent_mean_dict = mapping_model(img_latent_mean_aug, guidance_image) if configs['guidance_method'] else mapping_model(img_latent_mean_aug)
+            loss_Rec = configs["w_rec"] * get_multi_loss(
                 mse_loss,
                 out_latent_mean_dict,
                 seg_latent_mean,
-                is_ds     = True,
-                key_list  = ds_list,
+                is_ds=True,
+                key_list=ds_list,
             )
 
-            pred_seg_dict = {
-                level: vae_decode(vae_model, out_latent_mean_dict[level], scale_factor)
-                for level in ds_list
-            }
+            # image matching [CHANGED] --> computes the predicted mask on different levels as the predicted latent representation
+            # was on different levels (see line 228 - 233 of latent_mapping_model.py)
+            pred_seg_dict = {}
+            for level_name in ds_list:
+                pred_seg_dict[level_name] = vae_decode(
+                    tiny_vae if configs['vae_model'] != 'tiny_vae' else vae_model, out_latent_mean_dict[level_name], scale_factor
+                )
 
-            loss_Dice = W_DICE * get_multi_loss(  # instead of W_DICE
+            # [CHANGED] --> similar to Loss_Rec
+            loss_Dice = configs["w_dice"] * get_multi_loss(
                 dice_loss,
                 pred_seg_dict,
-                get_cuda(seg_img),
-                is_ds        = True,
-                key_list     = ds_list,
+                seg_img,
+                is_ds=True,
+                key_list=ds_list,
             )
 
             loss = loss_Rec + loss_Dice
@@ -165,7 +271,7 @@ def run_trainer() -> None:
             loss.backward()
             optimizer.step()
 
-            iter_num     += 1
+            iter_num += 1
             if iter_num % 10 == 0:
                 writer.add_scalar("loss/loss", loss, iter_num)
                 writer.add_scalar("loss/loss_Rec", loss_Rec, iter_num)
@@ -178,117 +284,173 @@ def run_trainer() -> None:
         scheduler.step()
         writer.add_scalar("lr", scheduler.get_last_lr()[0], epoch)
 
-        # ---- Logging training ----
-        T_loss      = np.mean(T_loss)
-        T_loss_Rec  = np.mean(T_loss_Rec)
+        T_loss = np.mean(T_loss)
+        T_loss_Rec = np.mean(T_loss_Rec)
         T_loss_Dice = np.mean(T_loss_Dice)
+
+        logging.info("Train:")
         logging.info(
-            f"Train: loss: {T_loss:.4f}, loss_Rec: {T_loss_Rec:.4f}, loss_Dice: {T_loss_Dice:.4f}"
+            "loss: {:.4f}, loss_Rec: {:.4f}, loss_Dice: {:.4f}".format(
+                T_loss, T_loss_Rec, T_loss_Dice
+            )
         )
+
+        # [CHANGED] --> Added Tensorboard logging for training loss per epoch
         writer.add_scalar("train/loss", T_loss, epoch)
         writer.add_scalar("train/loss_Rec", T_loss_Rec, epoch)
         writer.add_scalar("train/loss_Dice", T_loss_Dice, epoch)
 
-        # =================== Validation phase =================== #
-        mapping_model.eval()
-        vae_model.eval()
-        for batch_data in tqdm(valid_loader, desc="Valid: "):
-            img_rgb = 2.0 * batch_data["img"] - 1.0
-            img_rgb = img_rgb / 255.0 # [ADDED] V.V.V Imp!  --> SCALE CORRECTION
-            seg_raw = batch_data["seg"].permute(0, 3, 1, 2) / 255.0
-            seg_rgb = 2.0 * seg_raw - 1.0
-            seg_img = torch.mean(seg_raw, dim=1, keepdim=True)
-            name = batch_data["name"]
+        ### Validation phase [CHANGED] --> almost same as Train except the dice score is being calculated here as well
+        ### Also note that the validation set is the same as the test set in the inference/valid.py file.
+        for batch_data in tqdm(valid_dataloader, desc="Valid: "):
+            img_rgb = batch_data["img"].to(device)
+            # print(img_rgb.max(), img_rgb.min(), img_rgb.shape) # [CHANGED] --> Debugging
+            img_rgb = img_rgb / 255.0
+            if configs['vae_model'] == 'tiny_vae':
+                img_rgb = 2.0 * img_rgb - 1.0
+
+            # print(img_rgb.max(), img_rgb.min(), img_rgb.shape)
+
+            seg_raw = batch_data["seg"].to(device)
+            seg_raw = seg_raw.permute(0, 3, 1, 2) / 255.0
+            seg_rgb = 2. * seg_raw -1.
+            seg_img = torch.mean(seg_raw, dim = 1, keepdim = True)
+            name = batch_data['name']
+
+            mapping_model.eval()
+            vae_model.eval()
+            tiny_vae.eval() if configs['vae_model'] != 'tiny_vae' else None
+            if skff_module is not None: skff_module.eval()
 
             with torch.no_grad():
-                img_latent_mean = vae_model.encode(get_cuda(img_rgb)).latents
-                seg_latent_mean = vae_model.encode(get_cuda(seg_rgb)).latents
+                if configs['vae_model'] == 'tiny_vae':
+                    img_latent_mean, seg_latent_mean = (
+                        vae_model.encode(img_rgb).latents,
+                        vae_model.encode(seg_rgb).latents,
+                    )
+                else:
+                    img_latent_mean, seg_latent_mean = (
+                        vae_model(img_rgb),
+                        tiny_vae.encode(seg_rgb).latents,
+                    )
 
-                out_latent_mean_dict = mapping_model(img_latent_mean)
+                if configs['guidance_method'] and configs['guidance_method'] != 'dino':
+                    with torch.no_grad():
+                        guidance_image = prepare_guidance(img_rgb, mode = configs['guidance_method'])
+
+                    if configs['guidance_method'] == 'wavelet' and skff_module is not None:
+                        guidance_image = skff_module(guidance_image) # (B, 3, 112, 112)
+
+                elif configs['guidance_method'] and configs['guidance_method'] == 'dino':
+                    guidance_image = None
+                else:
+                    guidance_image = None
+
+                # latent matching [CHANGED] --> recieves the grountruth latent mask representation and predicted and computes mse loss
+                out_latent_mean_dict = mapping_model(img_latent_mean, guidance_image) if configs['guidance_method'] else mapping_model(img_latent_mean)
+
                 pred_seg = vae_decode(
-                    vae_model, out_latent_mean_dict["out"], scale_factor
+                    tiny_vae if configs['vae_model'] != 'tiny_vae' else vae_model, out_latent_mean_dict["out"], scale_factor
                 )
 
-                loss_Rec = W_REC * mse_loss(
+                loss_Rec = configs["w_rec"] * mse_loss(
                     out_latent_mean_dict["out"], seg_latent_mean
                 )
-                loss_Dice = w2 * dice_loss(pred_seg, get_cuda(seg_img))
+                loss_Dice = configs["w_dice"] * dice_loss(pred_seg, seg_img)
 
                 loss = loss_Rec + loss_Dice
 
-                # ---- Dice calculation ----
-                pred_seg     = pred_seg.cpu()
-                reduce_axis  = list(range(1, len(seg_img.shape)))
-                intersection = torch.sum(seg_img * pred_seg, dim=reduce_axis)
-                y_o          = torch.sum(seg_img, dim=reduce_axis)
-                y_pred_o     = torch.sum(pred_seg, dim=reduce_axis)
-                denominator  = y_o + y_pred_o
-                dice_raw     = (2.0 * intersection) / denominator
-                dice_value   = dice_raw.mean()
+                # calc dice
+                pred_seg = pred_seg.cpu()
+                reduce_axis = list(range(1, len(seg_img.shape)))
+
+                intersection = torch.sum(seg_img.cpu() * pred_seg, dim=reduce_axis)
+                y_o = torch.sum(seg_img.cpu(), dim=reduce_axis)
+                y_pred_o = torch.sum(pred_seg, dim=reduce_axis)
+                denominator = y_o + y_pred_o
+                dice_raw = (2.0 * intersection) / denominator
+                dice_value = dice_raw.mean()
 
                 T_Dice_valid.append(dice_value.item())
                 T_loss_valid.append(loss.item())
                 T_loss_Rec_valid.append(loss_Rec.item())
                 T_loss_Dice_valid.append(loss_Dice.item())
 
-        # ---- Logging validation ----
-        T_Dice_valid        = np.mean(T_Dice_valid)
-        T_loss_valid        = np.mean(T_loss_valid)
-        T_loss_Rec_valid    = np.mean(T_loss_Rec_valid)
-        T_loss_Dice_valid   = np.mean(T_loss_Dice_valid)
+        T_Dice_valid = np.mean(T_Dice_valid)
+        T_loss_valid = np.mean(T_loss_valid)
+        T_loss_Rec_valid = np.mean(T_loss_Rec_valid)
+        T_loss_Dice_valid = np.mean(T_loss_Dice_valid)
 
         writer.add_scalar("valid/dice", T_Dice_valid, epoch)
         writer.add_scalar("valid/loss", T_loss_valid, epoch)
         writer.add_scalar("valid/loss_Rec", T_loss_Rec_valid, epoch)
         writer.add_scalar("valid/loss_Dice", T_loss_Dice_valid, epoch)
 
+        logging.info("Valid:")
         logging.info(
-            f"Valid: loss: {T_loss_valid:.4f}, loss_Rec: {T_loss_Rec_valid:.4f}, "
-            f"loss_Dice: {T_loss_Dice_valid:.4f}, Dice: {T_Dice_valid:.4f}"
+            "loss: {:.4f}, loss_Rec: {:.4f}, loss_Dice: {:.4f}, Dice: {:.4f}".format(
+                T_loss_valid, T_loss_Rec_valid, T_loss_Dice_valid, T_Dice_valid
+            )
         )
 
-        # ---- Model checkpointing ----
         if T_Dice_valid > best_valid_dice:
-            save_checkpoint(mapping_model, "best_valid_dice.pth", SNAPSHOT_PATH)
-            best_valid_dice         = T_Dice_valid
-            best_valid_dice_epoch   = epoch
+            save_name = f"best_valid_dice_{epoch}.pth"
+            if vae_train:
+                save_checkpoint(mapping_model, save_name, configs["snapshot_path"], vae_model = vae_model, vae_model_save = True)
+            else:
+                save_checkpoint(mapping_model, save_name, configs["snapshot_path"], skff_model = skff_module, skff_model_save = skff_module is not None)
+            best_valid_dice = T_Dice_valid
+            best_valid_dice_epoch = epoch
             logging.info("Save best valid Dice !")
 
         if T_loss_valid < best_valid_loss:
-            save_checkpoint(mapping_model, "best_valid_loss.pth", SNAPSHOT_PATH)
+            save_name = f"best_valid_loss_{epoch}.pth"
+            if vae_train:
+                save_checkpoint(mapping_model, save_name, configs["snapshot_path"], vae_model = vae_model, vae_model_save = True)
+            else:
+                save_checkpoint(mapping_model, save_name, configs["snapshot_path"], skff_model = skff_module, skff_model_save = skff_module is not None)
             best_valid_loss = T_loss_valid
             logging.info("Save best valid Loss All !")
 
         if T_loss_Rec_valid < best_valid_loss_rec:
-            save_checkpoint(mapping_model, "best_valid_loss_rec.pth", SNAPSHOT_PATH)
+            save_name = f"best_valid_loss_rec_{epoch}.pth"
+            if vae_train:
+                save_checkpoint(mapping_model, save_name, configs["snapshot_path"], vae_model = vae_model, vae_model_save = True)
+            else:
+                save_checkpoint(mapping_model, save_name, configs["snapshot_path"], skff_model = skff_module, skff_model_save = skff_module is not None)
             best_valid_loss_rec = T_loss_Rec_valid
             logging.info("Save best valid Loss Rec !")
 
         if T_loss_Dice_valid < best_valid_loss_dice:
-            save_checkpoint(mapping_model, "best_valid_loss_dice.pth", SNAPSHOT_PATH)
+            save_name = f"best_valid_loss_dice_{epoch}.pth"
+            if vae_train:
+                save_checkpoint(mapping_model, save_name, configs["snapshot_path"], vae_model = vae_model, vae_model_save = True)
+            else:
+                save_checkpoint(mapping_model, save_name, configs["snapshot_path"], skff_model = skff_module, skff_model_save = skff_module is not None)
             best_valid_loss_dice = T_loss_Dice_valid
             logging.info("Save best valid Loss Dice !")
 
-        if epoch % SAVE_FREQ == 0:
-            save_checkpoint(
-                mapping_model,
-                f"latent_mapping_model_epoch_{epoch:04d}.pth",
-                SNAPSHOT_PATH,
-            )
+        if epoch % configs["save_freq"] == 0:
+            save_name = "{}_epoch_{:0>4}.pth".format("latent_mapping_model", epoch)
+            if vae_train:
+                save_checkpoint(mapping_model, save_name, configs["snapshot_path"], vae_model = vae_model, vae_model_save = True)
+            else:
+                save_checkpoint(mapping_model, save_name, configs["snapshot_path"], skff_model = skff_module, skff_model_save = skff_module is not None)
 
         logging.info("Current learning rate: {:.5f}".format(scheduler.get_last_lr()[0]))
         logging.info(
-            f"epoch {epoch} / {EPOCHS} \t Time Taken: {int(time.time() - epoch_start_time)} sec"
+            "epoch %d / %d \t Time Taken: %d sec"
+            % (epoch, configs["epochs"], time.time() - epoch_start_time)
         )
         logging.info(
-            f"best valid dice: {best_valid_dice:.4f} at epoch: {best_valid_dice_epoch}"
+            "best valid dice: {:.4f} at epoch: {}".format(
+                best_valid_dice, best_valid_dice_epoch
+            )
         )
         logging.info("\n")
+
     writer.close()
 
 
-# -----------------------------------------------------------------------#
 if __name__ == "__main__":
     run_trainer()
-
-# -------------------------------- End ----------------------------------#

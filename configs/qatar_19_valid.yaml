@@ -1,0 +1,28 @@
+# Data Settings
+phase: valid
+# pickle_file_path: ./Dataset/busi/busi_train_test_names.pkl
+# model_weight: ./ckpt/valid_busi/best_model.pth
+# snapshot_path: ./ckpt/busi/202506201608/valid_busi_best_model
+# save_seg_img_path: ./ckpt/busi/202506201608/predicted_masks_best_model
+
+pickle_file_path: ./Dataset/QaTar-19/QaTar_19_train_val_test_names.pkl
+model_weight: ./ckpt/QaTar-19/epoch_2000/checkpoints/best_valid_loss_rec_184.pth
+snapshot_path: ./ckpt/QaTar-19/epoch_2000/valid_qatar-19_best_valid_loss_rec
+save_seg_img_path: ./ckpt/QaTar-19/epoch_2000/predicted_masks_best_valid_loss_rec
+
+# Valid Settings
+GPUs: [0]
+num_workers: 4
+batch_size: 1
+seed: 2333
+
+# Model Settings
+in_channel: 4
+out_channels: 4
+num_res_blocks: 2
+ch: 32
+ch_mult: [1, 2, 4, 4]
+
+# Loss Settings
+w_rec: 1
+w_kl: 0.001
