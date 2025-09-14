@@ -25,30 +25,7 @@ import torch.nn.functional  as F
 
 # If you keep HaarTransform under novel.lite_vae.blocks
 from modules.novel.lite_vae.blocks.haar import HaarTransform  # adjust path if needed
-
-# ------------------------------------------------------------------------------#
-#                         Edge Maps                                              #
-# ------------------------------------------------------------------------------#
-def get_edge_map(image: torch.Tensor, rgb: bool = True) -> torch.Tensor:
-    """
-    Canny edge detection.
-    Args:
-        image (B, 3, H, W) in [0, 1]
-    Returns:
-        (B, 1, H, W) or (B, 3, H, W) if rgb=True
-    """
-    edge_maps = []
-    for img in image:
-        img_np   = (img.permute(1, 2, 0).detach().cpu().numpy() * 255).astype(np.uint8)
-        img_gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
-        edges    = cv2.Canny(img_gray, 100, 200)
-        edge_maps.append(torch.from_numpy(edges).float().unsqueeze(0) / 255.0)
-
-    edge_map = torch.stack(edge_maps, dim=0)
-    if rgb:
-        edge_map = edge_map.repeat(1, 3, 1, 1)
-    return edge_map
-
+                                             #
 # ------------------------------------------------------------------------------#
 #                         Wavelet Sub-bands                                      #
 # ------------------------------------------------------------------------------#
@@ -62,52 +39,7 @@ def get_wavelet_subbands(images: torch.Tensor, lv: int = 1, drop_approx: bool = 
         sub_bands = sub_bands[:, 3:, :, :]   # drop approximation (first 3)
     return sub_bands
 
-# ------------------------------------------------------------------------------#
-#                         DINO (Dinov2) Loader (cached)                          #
-# ------------------------------------------------------------------------------#
-_DINO_CACHE = {"model": None, "device": None}
-
-def load_dino_silent(device: str | torch.device = None):
-    """Lazy-load dinov2_vits14 via torch.hub once; cache & return on requested device."""
-    if device is None:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-
-    if _DINO_CACHE["model"] is not None:
-        # Move to new device only if needed
-        if str(_DINO_CACHE["device"]) != str(device):
-            _DINO_CACHE["model"] = _DINO_CACHE["model"].to(device)
-            _DINO_CACHE["device"] = device
-        return _DINO_CACHE["model"]
-
-    logging.getLogger().setLevel(logging.WARNING)
-    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-        dino_model = torch.hub.load("facebookresearch/dinov2", "dinov2_vits14", verbose=False)
-
-    dino_model = dino_model.to(device).eval()
-    _DINO_CACHE["model"]  = dino_model
-    _DINO_CACHE["device"] = device
-    return dino_model
-
-def get_dino_patch_features(image: torch.Tensor) -> torch.Tensor:
-    """
-    Extract patch-level features using dinov2_vits14.
-    Input:  image (B, 3, 224, 224) in [0,1]
-    Output: (B, C=384, h, w) typically ~ (16,16) or (28,28) depending on backbone/stride
-    """
-    dino_model = load_dino_silent(device=image.device)
-    with torch.no_grad():
-        result      = dino_model(image, is_training=True)["x_norm_patchtokens"]  # (B, N, C)
-        B, N, C     = result.shape
-        h = w       = int(math.sqrt(N))
-        dino_patch  = result.reshape(B, h, w, C).permute(0, 3, 1, 2).contiguous()
-
-        # per-channel min-max norm
-        min_vals = dino_patch.amin(dim=(2, 3), keepdim=True)
-        max_vals = dino_patch.amax(dim=(2, 3), keepdim=True)
-        dino_patch = (dino_patch - min_vals) / (max_vals - min_vals + 1e-8)
-    return dino_patch
-
-# ------------------------------------------------------------------------------#
+#
 #                         Guidance Router                                        #
 # ------------------------------------------------------------------------------#
 def prepare_guidance(image: torch.Tensor, mode: str = "edge") -> torch.Tensor:
@@ -115,12 +47,9 @@ def prepare_guidance(image: torch.Tensor, mode: str = "edge") -> torch.Tensor:
     mode: 'edge' | 'wavelet' | 'dino'
     Returns a guidance tensor on CPU/GPU matching the input device.
     """
-    if mode == "edge":
-        return get_edge_map(image)
     if mode == "wavelet":
         return get_wavelet_subbands(image)
-    if mode == "dino":
-        return get_dino_patch_features(image)
+
     raise ValueError(f"Unknown guidance mode: {mode}")
 
 # ------------------------------------------------------------------------------#

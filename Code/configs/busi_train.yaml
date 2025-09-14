@@ -1,19 +1,21 @@
 # Data Settings
 phase: train
 
+patchify: False
+learn_patch: False
+
 guidance_method: False #'wavelet'
-
+dilation_rates: (1, 2, 3, 4)
+# fh
 vae_model: litevae-s # or tiny_vae
-tiny_mode: 'tiny'
-
-pickle_file_path: ./Dataset/bus/bus_train_test_names.pkl
-snapshot_path: ./ckpt/litevae_baseline_bus_align_loss_batch_size_12
+pickle_file_path: ./Dataset/busi/busi_train_test_names.pkl
+snapshot_path: ./ckpt/litevae_baseline_busi_correct_transforms
 
 # Training Settings
 epochs: 1000
 GPUs: [0]
 num_workers: 8
-batch_size: 8 # possible due to TinyVae
+batch_size: 12 # possible due to TinyVae
 save_freq: 100
 seed: 2333
 
@@ -30,4 +32,3 @@ lr: 0.002
 # Loss Settings
 w_rec: 1
 w_dice: 1
-align_loss: True

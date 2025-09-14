@@ -74,6 +74,7 @@ def generate_pickle_default(
     img_bases   = {Path(f).stem for f in img_files}
     mask_bases  = {Path(f).stem for f in mask_files}
     common      = sorted(list(img_bases & mask_bases))
+    
     if not common:
         raise RuntimeError(f"No matched image-mask basenames found under {root}")
 
