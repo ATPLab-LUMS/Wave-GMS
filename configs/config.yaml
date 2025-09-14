@@ -1,0 +1,60 @@
+# ------------------------------------------------------------------------------#
+#
+# File name                 : config.yaml
+# Purpose                   : Single YAML config that dynamically adjusts variables
+#                             and paths based on the dataset and phase (train/valid).
+# Usage                     : Imported by training and inference pipelines.
+#
+# Authors                   : Talha Ahmed, Nehal Ahmed Shaikh, Hassan Mohy-ud-Din
+# Email                     : 24100033@lums.edu.pk, 202410001@lums.edu.pk,
+#                             hassan.mohyuddin@lums.edu.pk
+#
+# Last Modified             : June 21, 2025
+# ------------------------------------------------------------------------------#
+
+# --------------------------- Experiment setup ---------------------------------#
+dataset           : kvasir-instrument        # "bus", "kvasir-instrument", etc.
+phase             : train       # "train" or "valid"
+precision         : float16     # Dynamic setting of tensor/numpy arrays etc for "float32", "float16", "bfloat16",.
+seed              : 2333
+vae_scale_factor  : 1.0
+img_format        : 'jpg'       # Image format for saving/loading, e.g., 'jpg', 'png', 'tif'.
+
+# --------------------------- Base paths ---------------------------------------#
+base_data_dir  : ./Dataset
+base_ckpt_dir  : ./ckpt
+
+# --------------------------- Derived paths ------------------------------------#
+paths:
+  pickle_file     : "{base_data_dir}/{dataset}/{dataset}_train_test_names.pkl"
+  snapshot        : "{base_ckpt_dir}/{dataset}/{timestamp}"
+  model_weight    : "{paths_snapshot}/checkpoints/best_valid_dice.pth"
+  predicted_masks : "{paths_snapshot}/predicted_masks"
+
+# --------------------------- Training settings --------------------------------#
+train:
+  epochs        : 200
+  batch_size    : 2
+  save_freq     : 25
+  lr            : 0.002
+  num_workers   : 8
+
+# --------------------------- Validation settings ------------------------------#
+valid:
+  batch_size    : 1
+  num_workers   : 4
+
+# --------------------------- Model settings -----------------------------------#
+model:
+  in_channel       : 4
+  out_channels     : 4
+  num_res_blocks   : 2
+  ch               : 32
+  ch_mult          : [1, 2, 4, 4]
+
+# --------------------------- Loss weights -------------------------------------#
+loss:
+  w_rec            : 1
+  w_dice           : 1
+
+# --------------------------------- End -----------------------------------------#
