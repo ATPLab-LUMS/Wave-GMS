@@ -1,137 +1,145 @@
 # ------------------------------------------------------------------------------#
 #
 # File name                 : latent_mapping_model.py
-# Purpose                   : LMM: Residual + Spatial-Attention U-Net (deep supervision)
-# Usage                     : from networks.latent_mapping_model import ResAttnUNet_DS
+# Purpose                   : Defines the Latent Mapping Model (LMM) with residual
+#                             and attention-based blocks for latent-to-latent mapping.
+# Usage                     : See example in main()
 #
 # Authors                   : Talha Ahmed, Nehal Ahmed Shaikh, 
 #                             Hassan Mohy-ud-Din
 # Email                     : 24100033@lums.edu.pk, 24020001@lums.edu.pk,
 #                             hassan.mohyuddin@lums.edu.pk
 #
-# Last Modified             : August 25, 2025
+# Last Modified             : September 17, 2025
+# Note:                     : Adapted from [https://github.com/King-HAW/GMS]
 # ------------------------------------------------------------------------------#
 
 # --------------------------- Module Imports -----------------------------------#
 import logging
+
 import torch
-import torch.nn                 as nn
-import torch.nn.functional      as F
-
-from einops                     import rearrange
-
+from torch import nn
+from einops import rearrange
 # ------------------------------------------------------------------------------#
-#                         Norm & Attention                                       #
-# ------------------------------------------------------------------------------#
+
+
+# ----------------------------- Normalization ----------------------------------#
 def Normalize(in_channels: int) -> nn.GroupNorm:
+    """GroupNorm layer with fixed configuration."""
     return nn.GroupNorm(num_groups=16, num_channels=in_channels, eps=1e-6, affine=True)
 
+
+# --------------------------- Attention Block ----------------------------------#
 class SpatialSelfAttention(nn.Module):
-    def __init__(self, in_channels: int):
+    """Spatial self-attention block with normalization and projection."""
+
+    def __init__(self, in_channels: int) -> None:
         super().__init__()
-        self.norm   = Normalize(in_channels)
-        self.q      = nn.Conv2d(in_channels, in_channels, 1)
-        self.k      = nn.Conv2d(in_channels, in_channels, 1)
-        self.v      = nn.Conv2d(in_channels, in_channels, 1)
-        self.proj   = nn.Conv2d(in_channels, in_channels, 1)
+        self.norm       = Normalize(in_channels)
+        self.q          = nn.Conv2d(in_channels, in_channels, 1)
+        self.k          = nn.Conv2d(in_channels, in_channels, 1)
+        self.v          = nn.Conv2d(in_channels, in_channels, 1)
+        self.proj_out   = nn.Conv2d(in_channels, in_channels, 1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        h       = self.norm(x)
-        q, k, v = self.q(h), self.k(h), self.v(h)
+        h_ = self.norm(x)
+        q, k, v = self.q(h_), self.k(h_), self.v(h_)
 
-        b, c, hgt, wid = q.shape
-        q = rearrange(q, 'b c h w -> b (h w) c')
-        k = rearrange(k, 'b c h w -> b c (h w)')
+        b, c, h, w = q.shape
+        q = rearrange(q, "b c h w -> b (h w) c")
+        k = rearrange(k, "b c h w -> b c (h w)")
+        w_ = torch.einsum("bij,bjk->bik", q, k) * (c ** -0.5)
+        w_ = torch.nn.functional.softmax(w_, dim=2)
 
-        attn = torch.einsum('bij,bjk->bik', q, k) * (c ** -0.5)
-        attn = F.softmax(attn, dim=2)
-        attn = rearrange(attn, 'b i j -> b j i')
+        v  = rearrange(v, "b c h w -> b c (h w)")
+        w_ = rearrange(w_, "b i j -> b j i")
+        h_ = torch.einsum("bij,bjk->bik", v, w_)
+        h_ = rearrange(h_, "b c (h w) -> b c h w", h=h)
+        return x + self.proj_out(h_)
 
-        v    = rearrange(v, 'b c h w -> b c (h w)')
-        hout = torch.einsum('bij,bjk->bik', v, attn)
-        hout = rearrange(hout, 'b c (h w) -> b c h w', h=hgt)
-        return x + self.proj(hout)
 
-# ------------------------------------------------------------------------------#
-#                         ResBlocks                                             #
-# ------------------------------------------------------------------------------#
-
+# ---------------------------- Residual Blocks ---------------------------------#
 class ResBlock(nn.Module):
-    def __init__(self, in_channels: int, out_channels: int, leaky: bool = True):
+    """Residual block with optional channel matching."""
+
+    def __init__(self, in_channels: int, out_channels: int, leaky: bool = True) -> None:
         super().__init__()
-        act1            = nn.PReLU() if leaky else nn.ReLU(inplace=True)
-        act2            = nn.PReLU() if leaky else nn.ReLU(inplace=True)
+        act1, act2 = (nn.PReLU(), nn.PReLU()) if leaky else (nn.ReLU(inplace=True), nn.ReLU(inplace=True))
 
-        self.conv1      = nn.Sequential(Normalize(in_channels),  act1,
-                                        nn.Conv2d(in_channels, out_channels, 3, 1, 1, bias=True))
-        self.conv2      = nn.Sequential(Normalize(out_channels), act2,
-                                        nn.Conv2d(out_channels, out_channels, 3, 1, 1, bias=True))
-
-        self.skip       = nn.Identity() if in_channels == out_channels \
-                          else nn.Conv2d(in_channels, out_channels, 1, 1, 0, bias=False)
+        self.conv1 = nn.Sequential(
+            Normalize(in_channels),
+            act1,
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1),
+        )
+        self.conv2 = nn.Sequential(
+            Normalize(out_channels),
+            act2,
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1),
+        )
+        self.skip_connection = nn.Identity() if in_channels == out_channels else nn.Conv2d(
+            in_channels, out_channels, kernel_size=1, stride=1, padding=0, bias=False
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        h = self.conv2(self.conv1(x))
-        return self.skip(x) + h
+        return self.skip_connection(x) + self.conv2(self.conv1(x))
+
 
 class ResAttBlock(nn.Module):
-    def __init__(self, in_channels: int, out_channels: int):
+    """Residual block followed by spatial self-attention."""
+
+    def __init__(self, in_channels: int, out_channels: int) -> None:
         super().__init__()
-        self.res    = ResBlock(in_channels, out_channels)
-        self.attn   = SpatialSelfAttention(out_channels)
+        self.resblock  = ResBlock(in_channels, out_channels)
+        self.attention = SpatialSelfAttention(out_channels)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.attn(self.res(x))
+        return self.attention(self.resblock(x))
 
-# ------------------------------------------------------------------------------#
-#                         LMM: ResAttnUNet_DS                                    #
-# ------------------------------------------------------------------------------#
+
+# ----------------------------- LMM (UNet) -------------------------------------#
 class ResAttnUNet_DS(nn.Module):
-    """Residual + spatial self-attention U-Net-like mapper with deep supervision.
+    """Latent Mapping Model (ResAttn U-Net with deep supervision)."""
 
-    Input:  z  ∈ ℝ[B, Cin,  H,  W]
-    Output: dict(level3, level2, level1, out), each ∈ ℝ[B, Cout, H, W]
-    """
-    def __init__(self, in_channel: int = 4, out_channels: int = 4,
-                 num_res_blocks: int = 2, ch: int = 32, ch_mult=(1, 2, 4, 4)) -> None:
+    def __init__(self, in_channel: int = 8, out_channels: int = 8,
+                 num_res_blocks: int = 2, ch: int = 32,
+                 ch_mult: tuple = (1, 2, 4, 4)) -> None:
         super().__init__()
+        self.ch             = ch
+        self.num_res_blocks = len(ch_mult) * [num_res_blocks] if isinstance(num_res_blocks, int) else num_res_blocks
 
-        if isinstance(num_res_blocks, int):
-            _ = len(ch_mult) * [num_res_blocks]  # kept for parity with older signatures
+        # Encoder
+        self.input_blocks   = nn.Conv2d(in_channel, ch, kernel_size=3, stride=1, padding=1)
+        self.conv1_0        = ResAttBlock(ch, ch * ch_mult[0])
+        self.conv2_0        = ResAttBlock(ch * ch_mult[0], ch * ch_mult[1])
+        self.conv3_0        = ResAttBlock(ch * ch_mult[1], ch * ch_mult[2])
+        self.conv4_0        = ResAttBlock(ch * ch_mult[2], ch * ch_mult[3])
 
-        self.inp       = nn.Conv2d(in_channel, ch, 3, 1, 1, bias=True)
+        # Decoder
+        self.conv3_1        = ResAttBlock(ch * (ch_mult[2] + ch_mult[3]), ch * ch_mult[2])
+        self.conv2_2        = ResAttBlock(ch * (ch_mult[1] + ch_mult[2]), ch * ch_mult[1])
+        self.conv1_3        = ResAttBlock(ch * (ch_mult[0] + ch_mult[1]), ch * ch_mult[0])
+        self.conv0_4        = ResAttBlock(ch * (1 + ch_mult[0]), ch)
 
-        self.conv1_0   = ResAttBlock(ch,               ch * ch_mult[0])
-        self.conv2_0   = ResAttBlock(ch * ch_mult[0],  ch * ch_mult[1])
-        self.conv3_0   = ResAttBlock(ch * ch_mult[1],  ch * ch_mult[2])
-        self.conv4_0   = ResAttBlock(ch * ch_mult[2],  ch * ch_mult[3])
+        # Deep supervision heads
+        self.convds3        = nn.Sequential(Normalize(ch * ch_mult[2]), nn.SiLU(),
+                                            nn.Conv2d(ch * ch_mult[2], out_channels, 3, 1, 1, bias=False))
+        self.convds2        = nn.Sequential(Normalize(ch * ch_mult[1]), nn.SiLU(),
+                                            nn.Conv2d(ch * ch_mult[1], out_channels, 3, 1, 1, bias=False))
+        self.convds1        = nn.Sequential(Normalize(ch * ch_mult[0]), nn.SiLU(),
+                                            nn.Conv2d(ch * ch_mult[0], out_channels, 3, 1, 1, bias=False))
+        self.convds0        = nn.Sequential(Normalize(ch), nn.SiLU(),
+                                            nn.Conv2d(ch, out_channels, 3, 1, 1, bias=False))
 
-        self.conv3_1   = ResAttBlock(ch * (ch_mult[2] + ch_mult[3]), ch * ch_mult[2])
-        self.conv2_2   = ResAttBlock(ch * (ch_mult[1] + ch_mult[2]), ch * ch_mult[1])
-        self.conv1_3   = ResAttBlock(ch * (ch_mult[0] + ch_mult[1]), ch * ch_mult[0])
-        self.conv0_4   = ResAttBlock(ch * (1 + ch_mult[0]),          ch)
-
-        self.convds3   = nn.Sequential(Normalize(ch * ch_mult[2]), nn.SiLU(),
-                                       nn.Conv2d(ch * ch_mult[2], out_channels, 3, 1, 1, bias=False))
-        self.convds2   = nn.Sequential(Normalize(ch * ch_mult[1]), nn.SiLU(),
-                                       nn.Conv2d(ch * ch_mult[1], out_channels, 3, 1, 1, bias=False))
-        self.convds1   = nn.Sequential(Normalize(ch * ch_mult[0]), nn.SiLU(),
-                                       nn.Conv2d(ch * ch_mult[0], out_channels, 3, 1, 1, bias=False))
-        self.convds0   = nn.Sequential(Normalize(ch),              nn.SiLU(),
-                                       nn.Conv2d(ch, out_channels, 3, 1, 1, bias=False))
-
-        self._init_weights()
+        self._initialize_weights()
         self._print_networks(verbose=False)
 
     def forward(self, x: torch.Tensor) -> dict:
-        # encoder path
-        x0   = self.inp(x)
-        x1   = self.conv1_0(x0)
-        x2   = self.conv2_0(x1)
-        x3   = self.conv3_0(x2)
-        x4   = self.conv4_0(x3)
+        x0  = self.input_blocks(x)
+        x1  = self.conv1_0(x0)
+        x2  = self.conv2_0(x1)
+        x3  = self.conv3_0(x2)
+        x4  = self.conv4_0(x3)
 
-        # decoder path with skips
         x3_1 = self.conv3_1(torch.cat([x3, x4], dim=1))
         x2_2 = self.conv2_2(torch.cat([x2, x3_1], dim=1))
         x1_3 = self.conv1_3(torch.cat([x1, x2_2], dim=1))
@@ -144,8 +152,8 @@ class ResAttnUNet_DS(nn.Module):
             "out":    self.convds0(x0_4),
         }
 
-    # ------------------------- utils ------------------------------------------#
-    def _init_weights(self) -> None:
+    # --------------------------- He Initialization & Number of Parameters -------------------------------#
+    def _initialize_weights(self) -> None:
         for m in self.modules():
             if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
                 nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="leaky_relu")
@@ -159,9 +167,18 @@ class ResAttnUNet_DS(nn.Module):
                 nn.init.constant_(m.bias, 0)
 
     def _print_networks(self, verbose: bool = False) -> None:
-        logging.info("---------- LMM initialized -------------")
+        logging.info("---------- Networks initialized -------------")
         num_params = sum(p.numel() for p in self.parameters())
         if verbose:
-            logging.info(self)
-        logging.info("Total number of parameters : %.3f M", num_params / 1e6)
-        logging.info("----------------------------------------")
+            logging.info(self.modules())
+        logging.info("Total number of parameters : %.3f M" % (num_params / 1e6))
+        logging.info("-----------------------------------------------")
+
+
+# ------------------------------ Main ------------------------------------------#
+if __name__ == "__main__":
+    # Example: Run standalone test
+    model = ResAttnUNet_DS(in_channel=4, out_channels=4, num_res_blocks=2, ch=32, ch_mult=(1, 2, 4, 4))
+    out_dict = model(torch.ones(2, 4, 64, 64))
+    for key, val in out_dict.items():
+        print(f"{key}, shape: {val.shape}")

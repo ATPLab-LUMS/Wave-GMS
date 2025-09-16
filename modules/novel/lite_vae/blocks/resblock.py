@@ -1,49 +1,51 @@
 # ------------------------------------------------------------------------------#
 #
 # File name                 : resblock.py
-# Purpose                   : Residual block (GroupNorm + Conv) utilities
-# Usage                     : from networks.novel.lite_vae.blocks.resblock import ResBlock
+# Purpose                   : Defines standard residual block with optional 
+#                             dropout, normalization, and flexible skip connections.
 #
-# Authors                   : Talha Ahmed, Nehal Ahmed Shaikh,
+# Authors                   : Talha Ahmed, Nehal Ahmed Shaikh, 
 #                             Hassan Mohy-ud-Din
 # Email                     : 24100033@lums.edu.pk, 24020001@lums.edu.pk,
 #                             hassan.mohyuddin@lums.edu.pk
 #
-# Last Modified             : August 26, 2025
+# Last Modified             : September 17, 2025
+# Note                      : Adapted from [https://arxiv.org/pdf/2405.14477.pdf]
 # ------------------------------------------------------------------------------#
 
 # --------------------------- Module Imports -----------------------------------#
-from __future__ import annotations
+from typing                 import Optional
 
-from typing                     import Optional
 import torch
-import torch.nn                 as nn
-from torch                      import Tensor
+
+from torch                  import nn, Tensor
 # ------------------------------------------------------------------------------#
 
 
-# --------------------------------- Utilities ----------------------------------#
-def get_activation(name: str) -> nn.Module:
+# ---------------------------- Get Activation -------------------------------#
+def get_activation(name: str):
+    """
+    Return activation function by name.
+    Supported: relu, silu, mish, gelu.
+    """
     name = name.lower()
-    if name == "relu": return nn.ReLU(inplace=True)
-    if name == "silu": return nn.SiLU()
-    if name == "mish": return nn.Mish(inplace=True)
-    if name == "gelu": return nn.GELU()
+    if name == "relu":
+        return nn.ReLU(inplace=True)
+    if name == "silu":
+        return nn.SiLU(inplace=True)
+    if name == "mish":
+        return nn.Mish(inplace=True)
+    if name == "gelu":
+        return nn.GELU()
     raise ValueError(f"Unknown activation {name}")
+# ------------------------------------------------------------------------------#
 
 
-# ---------------------------------- ResBlock ----------------------------------#
+# -------------------------------- ResBlock ------------------------------------#
 class ResBlock(nn.Module):
-    """Residual block with GroupNorm + SiLU and 3×3 padded convs.
-
-    Args:
-        in_channels     : input channels
-        dropout         : dropout prob
-        out_channels    : output channels (default: = in_channels)
-        use_conv        : if True and channel mismatch, use 3×3 skip; else 1×1
-        activation      : 'silu' | 'relu' | 'mish' | 'gelu'
-        norm_num_groups : GroupNorm groups (channels should be divisible)
-        scale_factor    : residual scaling factor (default 1.0)
+    """
+    Residual block with GroupNorm, activation, dropout, 
+    and optional convolution-based skip connection.
     """
     def __init__(
         self,
@@ -56,25 +58,38 @@ class ResBlock(nn.Module):
         scale_factor: float = 1.0,
     ) -> None:
         super().__init__()
-        out_channels     = out_channels or in_channels
-        self.scale       = scale_factor
+        self.in_channels   = in_channels
+        self.out_channels  = out_channels or in_channels
 
-        self.norm_in     = nn.GroupNorm(norm_num_groups, in_channels)
-        self.act_in      = get_activation(activation)
-        self.conv_in     = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
+        # Input layers
+        self.norm_in       = nn.GroupNorm(norm_num_groups, in_channels)
+        self.act_in        = get_activation(activation)
+        self.conv_in       = nn.Conv2d(in_channels, self.out_channels, kernel_size=3, padding=1)
 
-        self.norm_out    = nn.GroupNorm(norm_num_groups, out_channels)
-        self.act_out     = get_activation(activation)
-        self.dropout     = nn.Dropout(dropout)
-        self.conv_out    = nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1)
+        # Output layers
+        self.norm_out      = nn.GroupNorm(norm_num_groups, self.out_channels)
+        self.act_out       = get_activation(activation)
+        self.dropout       = nn.Dropout(dropout)
+        self.conv_out      = nn.Conv2d(self.out_channels, self.out_channels, kernel_size=3, padding=1)
 
-        self.skip        = nn.Identity() if out_channels == in_channels else (
-                           nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1) if use_conv
-                           else nn.Conv2d(in_channels, out_channels, kernel_size=1)
-                           )
+        # Skip connection
+        if self.out_channels == in_channels:
+            self.skip_connection = nn.Identity()
+        elif use_conv:
+            self.skip_connection = nn.Conv2d(in_channels, self.out_channels, kernel_size=3, padding=1)
+        else:
+            self.skip_connection = nn.Conv2d(in_channels, self.out_channels, kernel_size=1)
+
+        self.scale_factor  = scale_factor
 
     def forward(self, x: Tensor) -> Tensor:
-        h = self.conv_in(self.act_in(self.norm_in(x)))
-        h = self.conv_out(self.dropout(self.act_out(self.norm_out(h))))
-        return (self.skip(x) + h) / self.scale
-# ------------------------------------------------------------------------------#
+        h = self.norm_in(x)
+        h = self.act_in(h)
+        h = self.conv_in(h)
+
+        h = self.norm_out(h)
+        h = self.act_out(h)
+        h = self.dropout(h)
+        h = self.conv_out(h)
+
+        return (self.skip_connection(x) + h) / self.scale_factor

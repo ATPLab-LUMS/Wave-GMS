@@ -1,0 +1,71 @@
+# Ignore png, jpeg, jpg, files
+*.png
+*.jpeg
+*.jpg
+
+# Ignore .zip, .h5, .pth, .csv, .txt, .pyc or .yml/yaml files files
+*.zip
+*.h5
+*.pth
+*.csv
+*.txt
+*.pyc
+*.tfevents.*
+
+
+# -------------------------
+# OS-specific junk files
+# -------------------------
+.DS_Store
+Thumbs.db
+
+# -------------------------
+# Python cache / build files
+# -------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# -------------------------
+# Virtual environments
+# -------------------------
+venv/
+env/
+.TaN2/
+.taN2/
+*.env
+
+# -------------------------
+# Jupyter Notebook checkpoints
+# -------------------------
+.ipynb_checkpoints/
+
+# -------------------------
+# Logs / Debug files
+# -------------------------
+*.log
+*.out
+*.err
+
+# -------------------------
+# Project-specific large files
+# -------------------------
+# Ignore datasets
+
+# Ignore checkpoints / weights
+ckpt/
+checkpoints/
+weights/
+*.pt
+*.ckpt
+*.npz
+
+# Ignore temporary experiments
+tmp/
+temp/

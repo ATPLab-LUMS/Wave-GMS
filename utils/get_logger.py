@@ -1,68 +1,72 @@
 # ------------------------------------------------------------------------------#
 #
 # File name                 : get_logger.py
-# Purpose                   : Utility for initializing logging to both file and console.
-# Usage                     : Called during training/inference to initialize log files.
+# Purpose                   : Centralized logger setup (file + console) with safe handler init
+# Usage                     : from utils.get_logger import open_log
 #
-# Authors                   : Talha Ahmed, Nehal Ahmed Shaikh, Hassan Mohy-ud-Din
+# Authors                   : Talha Ahmed, Nehal Ahmed Shaikh,
+#                             Hassan Mohy-ud-Din
 # Email                     : 24100033@lums.edu.pk, 24020001@lums.edu.pk,
 #                             hassan.mohyuddin@lums.edu.pk
 #
-# Last Modified             : June 21, 2025
+# Last Modified             : Sep 16, 2025
+# ------------------------------------------------------------------------------#
+
+# --------------------------- Module Imports -----------------------------------#
+from pathlib import Path
+import logging
+from typing import Any, Dict
 # ------------------------------------------------------------------------------#
 
 
-# --------------------------- Module imports -----------------------------------#
-import os, logging
-
-from configs.config             import *
-
-# --------------------------- Open log file ------------------------------------#
-def open_log(args, config):
+def open_log(args: Any, config: Dict[str, Any]) -> logging.Logger:
     """
-    Set up logging to file and console for Python config scripts.
-    Args:
-        args   : argparse.Namespace with 'config' (path to config .py)
-        config : Config object (module or dict)
-    """
-    log_savepath = getattr(config, 'LOG_PATH', None) or config.get('LOG_PATH', None)
-    if not os.path.exists(log_savepath):
-        os.makedirs(log_savepath)
+    Initialize logging using repo-style config dict and CLI args.
 
-    log_name = os.path.splitext(os.path.basename(args.config))[0]  # no .py
-    log_filename = os.path.join(log_savepath, f'{log_name}.txt')
-
-    if os.path.isfile(log_filename):
-        os.remove(log_filename)
-
-    initLogging(log_filename)
-    logging.info(f"Logging initialized. Log file: {log_filename}")
-    
-# --------------------------- Logger initializer -------------------------------#
-def initLogging(logFilename):
-    """
-    Initializes Python logging to write logs to both a file and the console.
-
-    Args:
-        logFilename : Full path of the log file.
+    Expected:
+        - config['log_path']: directory to store logs
+        - args.config       : path to the YAML used (for log filename)
 
     Returns:
-        None
+        logging.Logger: configured root logger.
     """
+    log_dir         = Path(config["log_path"])
+    log_dir.mkdir(parents=True, exist_ok=True)
 
-    logging.basicConfig(
-        level     = logging.INFO,
-        format    = '[%(asctime)s-%(levelname)s] %(message)s',
-        datefmt   = '%y-%m-%d %H:%M:%S',
-        filename  = logFilename,
-        filemode  = 'w'
-    )
+    yaml_name       = Path(getattr(args, "config")).stem  # e.g., bus_train
+    log_file        = log_dir / f"{yaml_name}-yaml.txt"
 
-    # Set up console output
-    console        = logging.StreamHandler()
-    console.setLevel(logging.INFO)
-    formatter      = logging.Formatter('[%(asctime)s-%(levelname)s] %(message)s')
-    console.setFormatter(formatter)
-    logging.getLogger('').addHandler(console)
+    return _init_logging(log_file)
 
-# --------------------------------- End -----------------------------------------#
+
+def _init_logging(log_file: Path, level: int = logging.INFO) -> logging.Logger:
+    """
+    Create a root logger that logs to both a file and the console.
+    Safe against duplicate handlers on repeated calls.
+    """
+    logger                  = logging.getLogger()  # root
+    logger.setLevel(level)
+    logger.propagate        = False  # prevent double prints in some environments
+
+    # Clear existing handlers (important if re-initializing in the same process)
+    if logger.handlers:
+        for h in list(logger.handlers):
+            logger.removeHandler(h)
+
+    fmt                     = logging.Formatter("[%(asctime)s-%(levelname)s] %(message)s", "%y-%m-%d %H:%M:%S")
+
+    # File handler
+    fh                      = logging.FileHandler(log_file, mode="w", encoding="utf-8")
+    fh.setLevel(level)
+    fh.setFormatter(fmt)
+    logger.addHandler(fh)
+
+    # Console handler
+    ch                      = logging.StreamHandler()
+    ch.setLevel(level)
+    ch.setFormatter(fmt)
+    logger.addHandler(ch)
+
+    logger.info("Logging initialized")
+    logger.info(f"Log file: {log_file.resolve()}")
+    return logger

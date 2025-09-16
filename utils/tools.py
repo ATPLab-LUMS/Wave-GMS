@@ -1,193 +1,144 @@
 # ------------------------------------------------------------------------------#
 #
-# File name                 : tools.py
-# Purpose                   : Utility functions for seeding, saving/loading models,
-#                             learning rate scheduling, CUDA setup, config loading.
-# Usage                     : Used across training and evaluation pipelines.
+# File name                 : checkpoint_utils.py
+# Purpose                   : Utility functions for checkpoint handling, 
+#                             reproducibility, logging, and training support.
+# Usage                     : from utils.checkpoint_utils import load_checkpoint, save_checkpoint
 #
-# Authors                   : Talha Ahmed, Nehal Ahmed Shaikh, Hassan Mohy-ud-Din
+# Authors                   : Talha Ahmed, Nehal Ahmed Shaikh,
+#                             Hassan Mohy-ud-Din
 # Email                     : 24100033@lums.edu.pk, 24020001@lums.edu.pk,
 #                             hassan.mohyuddin@lums.edu.pk
 #
-# Last Modified             : June 21, 2025
+# Last Modified             : Sep 17, 2025
+# Note                      : Adapted from [https://github.com/King-HAW/GMS]
+# ------------------------------------------------------------------------------#
+
+# ---------------------------------- Module Imports ----------------------------#
+import os, random, logging, torch
+
+import numpy as np
 # ------------------------------------------------------------------------------#
 
 
-# --------------------------- Module imports -----------------------------------#
-import os, yaml, torch, random, logging
-
-import numpy as np
-
-from pathlib import Path
-from datetime import datetime
-
-
-# --------------------------- Create directories -------------------------------#
-def mkdir(path: str):
-    """
-    Create a directory if it doesn't already exist.
-
-    Args:
-        path : Directory path to create.
-    """
+# --------------------------- Filesystem Helpers -------------------------------#
+def mkdir(path: str) -> None:
+    """Create directory if it doesn’t exist."""
     if not os.path.exists(path):
         os.makedirs(path)
 
 
-# --------------------------- Seed reproducibility -----------------------------#
-def seed_reproducer(seed: int = 2333):
-    """
-    Set all seeds for reproducibility (NumPy, random, torch, and CUDA).
-
-    Args:
-        seed : Random seed to set (default = 2333).
-    """
+# --------------------------- Seed Reproducer ----------------------------------#
+def seed_reproducer(seed: int = 2333) -> None:
+    """Reproducibility across Python, NumPy, and PyTorch."""
     random.seed(seed)
     os.environ["PYTHONHASHSEED"] = str(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
-
     if torch.cuda.is_available():
         torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
         torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
-        torch.backends.cudnn.enabled = True
+        torch.backends.cudnn.benchmark     = False
+        torch.backends.cudnn.enabled       = True
 
 
-# --------------------------- Load model checkpoint ----------------------------#
-def load_checkpoint(model: torch.nn.Module, path: str) -> torch.nn.Module:
-    """
-    Load a model checkpoint from a given path.
-
-    Args:
-        model : Model instance to load weights into.
-        path  : Path to .pth checkpoint file.
-
-    Returns:
-        model : Updated model or None if file not found.
-    """
+# --------------------------- Checkpoint Loading -------------------------------#
+def load_checkpoint(
+    model: torch.nn.Module,
+    path: str,
+    vae_model=None,
+    vae_model_load: bool = False,
+    skff_model=None,
+    skff_model_load: bool = False,
+):
+    """Load checkpoint and optionally load VAE/SKFF models if present."""
     if os.path.isfile(path):
-        logging.info("=> loading checkpoint '{}'".format(path))
+        logging.info(f"=> Loading checkpoint '{path}'")
+        state = torch.load(path, weights_only=True, map_location="cpu")
 
-        # Map checkpoint to CPU (avoid GPU mismatch)
-        state = torch.load(
-            path, weights_only=True, map_location=lambda storage, location: storage
-        )
+        model.load_state_dict(state["model"])
+        logging.info(f"Loaded LMM model from {path}")
 
-        # Load model weights
-        model.load_state_dict(state["model"], strict = True)
-        logging.info("Loaded")
-        
+        if vae_model_load:
+            if "vae_model" in state:
+                vae_model.load_state_dict(state["vae_model"])
+                logging.info(f"Loaded VAE model from {path}")
+            else:
+                logging.warning("VAE model not found in checkpoint.")
+
+        if skff_model_load:
+            if "skff_model" in state:
+                skff_model.load_state_dict(state["skff_model"])
+                logging.info(f"Loaded SKFF model from {path}")
+            else:
+                logging.warning("SKFF model not found in checkpoint.")
     else:
+        logging.info(f"=> No checkpoint found at '{path}'")
         model = None
-        logging.info("=> no checkpoint found at '{}'".format(path))
-        
-    return model
+
+    return model, vae_model, skff_model
 
 
-# --------------------------- Save model checkpoint ----------------------------#
-def save_checkpoint(model: torch.nn.Module, save_name: str, path: str) -> None:
-    """
-    Save model weights to disk.
-
-    Args:
-        model     : PyTorch model instance.
-        save_name : Name for saved .pth file.
-        path      : Directory to save in (checkpoints subfolder will be created).
-    """
+# --------------------------- Checkpoint Saving --------------------------------#
+def save_checkpoint(
+    model: torch.nn.Module,
+    save_name: str,
+    path: str,
+    vae_model=None,
+    vae_model_save: bool = False,
+    skff_model=None,
+    skff_model_save: bool = False,
+) -> None:
+    """Save model checkpoint with optional VAE and SKFF components."""
     model_savepath = os.path.join(path, "checkpoints")
-    if not os.path.exists(model_savepath):
-        os.makedirs(model_savepath)
+    mkdir(model_savepath)
 
     file_name = os.path.join(model_savepath, save_name)
+    save_dict = {"model": model.state_dict()}
 
-    torch.save({"model": model.state_dict()}, file_name)
-    logging.info("save model to {}".format(file_name))
+    if vae_model_save:
+        save_dict["vae_model"] = vae_model.state_dict()
+        logging.info(f"Saving LMM model and VAE model to {file_name}")
+
+    if skff_model_save:
+        save_dict["skff_model"] = skff_model.state_dict()
+        logging.info(f"Saving LMM model and SKFF model to {file_name}")
+
+    torch.save(save_dict, file_name)
+    logging.info(f"Saved checkpoint to {file_name}")
 
 
-# --------------------------- Adjust learning rate -----------------------------#
-def adjust_learning_rate(optimizer, initial_lr, epoch, reduce_epoch, decay=0.5):
-    """
-    Step decay learning rate scheduler.
+# --------------------------- Model Utilities ----------------------------------#
+def count_params(model: torch.nn.Module) -> int:
+    """Count the number of trainable parameters."""
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
-    Args:
-        optimizer     : PyTorch optimizer.
-        initial_lr    : Starting learning rate.
-        epoch         : Current epoch.
-        reduce_epoch  : Epoch frequency to decay.
-        decay         : Multiplicative decay factor.
 
-    Returns:
-        lr : Updated learning rate.
-    """
+def adjust_learning_rate(optimizer, initial_lr, epoch, reduce_epoch, decay: float = 0.5) -> float:
+    """Decay learning rate exponentially after fixed epochs."""
     lr = initial_lr * (decay ** (epoch // reduce_epoch))
     for param_group in optimizer.param_groups:
         param_group["lr"] = lr
-    logging.info("Change Learning Rate to {}".format(lr))
+    logging.info(f"Changed learning rate to {lr}")
     return lr
 
 
-# --------------------------- Move tensor to CUDA ------------------------------#
-def get_cuda(tensor):
-    """
-    Moves a tensor to CUDA if available.
-
-    Args:
-        tensor : A PyTorch tensor.
-
-    Returns:
-        tensor : Tensor on GPU if available.
-    """
-    if torch.cuda.is_available():
-        tensor = tensor.cuda()
-    return tensor
+def get_cuda(tensor: torch.Tensor) -> torch.Tensor:
+    """Move tensor to CUDA if available."""
+    return tensor.cuda() if torch.cuda.is_available() else tensor
 
 
-# --------------------------- Print configuration ------------------------------#
-def print_options(config):
-    """
-    Pretty print and save the current configuration (supports .py config as module or dict).
-    """
-    # Accept both module or dict config
-    if not isinstance(config, dict):
-        config = {k: getattr(config, k) for k in dir(config) if k.isupper() and not k.startswith('__')}
-    message = ""
-    message += "----------------- Options ---------------\n"
-    for k, v in config.items():
-        message += "{:>25}: {:<30}\n".format(str(k), str(v))
+# --------------------------- Config Logging -----------------------------------#
+def print_options(configs: dict) -> None:
+    """Print and save configuration options."""
+    message = "----------------- Options ---------------\n"
+    for k, v in configs.items():
+        message += f"{k:>25}: {v:<30}\n"
     message += "----------------- End -------------------"
-
     logging.info(message)
 
-    # Save options to file
-    log_path  = config.get('LOG_PATH', './logs')
-    phase     = config.get('PHASE', 'train')
-    file_name = os.path.join(log_path, f"{phase}_configs.txt")
-    
+    file_name = os.path.join(configs["log_path"], f"{configs['phase']}_configs.txt")
     with open(file_name, "wt") as opt_file:
-        opt_file.write(message)
-        opt_file.write("\n")
-
-# --------------------------- Precision helper ---------------------------------#
-def get_precision_dtypes(prec: str = "float16"):
-    """
-    Maps precision string → (numpy dtype, torch dtype).
-
-    Args:
-        prec : "float32", "float16", "bfloat16", …
-
-    Returns:
-        Tuple[np.dtype, torch.dtype]
-    """
-    table = {
-        "float32": (np.float32, torch.float32),
-        "float16": (np.float16, torch.float16),
-        "bfloat16": (np.float32, torch.bfloat16),  # Albumentations needs fp32 array
-    }
-    if prec not in table:
-        raise ValueError(f"Unsupported precision '{prec}'.")
-    return table[prec]
-
-
-# --------------------------------- End -----------------------------------------#
+        opt_file.write(message + "\n")
+# ------------------------------------------------------------------------------#

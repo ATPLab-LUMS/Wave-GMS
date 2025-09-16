@@ -15,9 +15,9 @@
 
 # --------------------------- Module re-exports --------------------------------#
 from .get_logger                    import *
-from .load_pretrained_models        import *
+from .instantiate_model        import *
 from .lr_scheduler                  import *
-from .load_pretrained_models        import *
+from .instantiate_model        import *
 from .tools                         import *
 from .train_utils                   import *
 from .metrics                       import *
