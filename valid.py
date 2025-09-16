@@ -51,14 +51,14 @@ def get_vae_encoding_mu_and_sigma(encoder_posterior, scale_factor):
 
 def vae_decode(vae_model, pred_mean, scale_factor, sd_vae = False):
     z = 1.0 / scale_factor * pred_mean
-    pred_seg = vae_model.decode(z) if sd_vae else vae_model.decode(z).sample # [CHANGED] --> has channels = 3 according to config
-    pred_seg = torch.mean(pred_seg, dim=1, keepdim=True) # [CHANGED] --> Taking mean across channels dimension resulting in 1 channel
-    pred_seg = torch.clamp((pred_seg + 1.0) / 2.0, min=0.0, max=1.0)  # (B, 1, H, W) # [CHANGED] --> Bringing the range to (0, 1) as per Kvasir-SEG dataset
+    pred_seg = vae_model.decode(z) if sd_vae else vae_model.decode(z).sample
+    pred_seg = torch.mean(pred_seg, dim=1, keepdim=True)
+    pred_seg = torch.clamp((pred_seg + 1.0) / 2.0, min=0.0, max=1.0)  # (B, 1, H, W)
     return pred_seg
 
 def arg_parse() -> argparse.ArgumentParser.parse_args :
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', default='./configs/busi_valid.yaml', # [CHANGED] --> added kvasir-seg yaml
+    parser.add_argument('--config', default='./configs/busi_valid.yaml',
                         type=str, help='load the config file')
     args = parser.parse_args()
     return args
@@ -169,7 +169,7 @@ def run_validator() -> None:
     ### Validation phase
     for batch_data in tqdm(valid_dataloader, desc='Valid: '):
         img_rgb = batch_data['img'].to(device)
-        img_rgb = img_rgb / 255.0 # [CHANGED] V.V.V Imp!  --> SCALE CORRECTION
+        img_rgb = img_rgb / 255.0
 
         if configs['vae_model'] == 'tiny_vae' or 'sd-vae' in configs['vae_model']:
             img_rgb = 2. * img_rgb - 1.

@@ -6,7 +6,7 @@
 # Usage                     : Imported by train.py and valid.py
 #
 # Authors                   : Talha Ahmed, Nehal Ahmed Shaikh, Hassan Mohy-ud-Din
-# Email                     : 24100033@lums.edu.pk, 202410001@lums.edu.pk,
+# Email                     : 24100033@lums.edu.pk, 24020001@lums.edu.pk,
 #                             hassan.mohyuddin@lums.edu.pk
 #
 # Last Modified             : June 23, 2025

@@ -6,15 +6,13 @@
 # Usage       : Imported by validation and analysis scripts.
 #
 # Authors     : Talha Ahmed, Nehal Ahmed Shaikh, Hassan Mohy-ud-Din
-# Email       : 24100033@lums.edu.pk, 202410001@lums.edu.pk,
+# Email       : 24100033@lums.edu.pk, 24020001@lums.edu.pk,
 #               hassan.mohyuddin@lums.edu.pk
 #
 # Last Modified: June 23, 2025
 # ---------------------------------- Module Imports --------------------------------------------#
 import torch
-
 import numpy as np
-
 from medpy import metric
 
 # --------------------------- Dice Score (DSC) ---------------------------------#
@@ -22,8 +20,6 @@ def dice_score(y_pred, y_true, eps = 1e-7):
     """
     Computes Dice Score (F1/DSC) for binary arrays.
     """
-
-    # print(f'y_pred.shape: {y_pred.shape}, y_true.shape: {y_true.shape}')
 
     y_pred = (y_pred >= 0.5).astype(np.uint8)
     y_true = (y_true >= 0.5).astype(np.uint8)

@@ -1,19 +1,17 @@
 # Data Settings
 phase: train
 
-guidance_method: False #'wavelet'
-
-vae_model: litevae-s # or tiny_vae
+guidance_method: False # [False, 'wavelet']
+vae_model: litevae-s # [litevae-s, tiny_va]
 tiny_mode: 'tiny'
-
-pickle_file_path: ./Dataset/bus/bus_train_test_names.pkl
-snapshot_path: ./ckpt/litevae_baseline_bus_align_loss_batch_size_12
+pickle_file_path: ./Dataset/ham10000/ham10000_train_test_names.pkl
+snapshot_path: ./ckpt/litevae_baseline_ham10000_align_loss_epoch_300_same_settings
 
 # Training Settings
-epochs: 1000
+epochs: 300
 GPUs: [0]
 num_workers: 8
-batch_size: 8 # possible due to TinyVae
+batch_size: 12 # possible due to TinyVae
 save_freq: 100
 seed: 2333
 

@@ -1,32 +1,19 @@
-# Basic Package
-import torch
-import argparse
+import torch, argparse, yaml, logging, time, os
 import numpy as np
-import yaml
-import logging
-import time
-import os
-from tqdm import tqdm
-from torch.utils.data import DataLoader
-from monai.losses.dice import DiceLoss
-
-
-# Own Package
-from data.image_dataset import Image_Dataset
-from tools.utils import *
-from tools.get_logger import open_log
-from tools.load_ckpt import * # contains function save_checkpoint
-from tools.lr_scheduler import LinearWarmupCosineAnnealingLR
-from tools.metrics      import *
+from tqdm                         import tqdm
+from torch.utils.data             import DataLoader
+from monai.losses.dice            import DiceLoss
+from data.image_dataset           import Image_Dataset
+from tools.utils                  import *
+from tools.get_logger             import open_log
+from tools.load_ckpt              import *
+from tools.lr_scheduler           import LinearWarmupCosineAnnealingLR
+from tools.metrics                import *
 from modules.latent_mapping_model import ResAttnUNet_DS
 from modules.models.distributions import DiagonalGaussianDistribution
-from modules.sft_lmm import *
-from modules.guidance import *
-
-from tensorboardX import SummaryWriter
-
-# Note the encoder output is AutoeencoderTinyOuput(latents = ouptut) and Decoder is DecoderOutput(sample = output)
-
+from modules.sft_lmm              import *
+from modules.guidance             import *
+from tensorboardX                 import SummaryWriter
 
 def get_multi_loss(criterion, out_dict, label, is_ds=True, key_list=None):
     keys = key_list if key_list is not None else list(out_dict.keys())
@@ -48,12 +35,11 @@ def get_vae_encoding_mu_and_sigma(encoder_posterior, scale_factor):
 
 def vae_decode(vae_model, pred_mean, scale_factor):
     z = 1.0 / scale_factor * pred_mean
-    pred_seg = vae_model.decode(z).sample  # [CHANGED] --> has channels = 3 according to config
-    pred_seg = torch.mean(pred_seg, dim=1, keepdim=True)  # [CHANGED] --> Taking mean across channels dimension resulting in 1 channel
-    pred_seg = torch.clamp((pred_seg + 1.0) / 2.0, min=0.0, max=1.0)  # (B, 1, H, W) # [CHANGED] --> Bringing the range to (0, 1) as per Kvasir-SEG dataset
+    pred_seg = vae_model.decode(z).sample
+    pred_seg = torch.mean(pred_seg, dim=1, keepdim=True)
+    pred_seg = torch.clamp((pred_seg + 1.0) / 2.0, min=0.0, max=1.0)  # (B, 1, H, W)
     return pred_seg
 
-# [CHANGED] --> added the path to the Kvasir-SEG config file
 def arg_parse() -> argparse.ArgumentParser.parse_args:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -200,10 +186,9 @@ def run_trainer() -> None:
 
         ### Training phase
         for batch_data in tqdm(train_dataloader, desc="Train: "):
-            # [CHANGED] --> In case the vae model is lite_vae, the haar transform expects (0, 1) or (0, 255) so we will scale the input accordingly
             # Note: no change needed regarding the segmentation as it is being used by tiny vae.
             img_rgb = batch_data['img'].to(device)
-            img_rgb = img_rgb / 255.0 # [CHANGED] V.V.V Imp!  --> SCALE CORRECTION
+            img_rgb = img_rgb / 255.0
 
             if configs['vae_model'] == 'tiny_vae':
                 img_rgb = 2. * img_rgb - 1.
@@ -211,7 +196,6 @@ def run_trainer() -> None:
             seg_raw = batch_data['seg'].to(device)
             seg_raw = seg_raw.permute(0, 3, 1, 2) / 255.0
             seg_rgb = 2. * seg_raw - 1.
-            # [CHANGED] --> Taking mean across channels dimension resulting in 1 channel which matches the channel dimension
             # of pred_seg gotten from the decoder. Same thing in Validation
             seg_img = torch.mean(seg_raw, dim=1, keepdim=True).to(device)
             name = batch_data["name"]
@@ -238,7 +222,7 @@ def run_trainer() -> None:
             elif configs['guidance_method'] and configs['guidance_method'] == 'dino':
                 guidance_image = None
 
-            # latent matching [CHANGED] --> recieves the grountruth latent mask representation and predicted and computes mse loss
+            # latent matching
             out_latent_mean_dict = mapping_model(img_latent_mean_aug, guidance_image) if configs['guidance_method'] else mapping_model(img_latent_mean_aug)
             loss_Rec = configs["w_rec"] * get_multi_loss(
                 mse_loss,
@@ -248,7 +232,7 @@ def run_trainer() -> None:
                 key_list=ds_list,
             )
 
-            # image matching [CHANGED] --> computes the predicted mask on different levels as the predicted latent representation
+            # image matching
             # was on different levels (see line 228 - 233 of latent_mapping_model.py)
             pred_seg_dict = {}
             for level_name in ds_list:
@@ -256,7 +240,6 @@ def run_trainer() -> None:
                     tiny_vae if configs['vae_model'] != 'tiny_vae' else vae_model, out_latent_mean_dict[level_name], scale_factor
                 )
 
-            # [CHANGED] --> similar to Loss_Rec
             loss_Dice = configs["w_dice"] * get_multi_loss(
                 dice_loss,
                 pred_seg_dict,
@@ -295,21 +278,18 @@ def run_trainer() -> None:
             )
         )
 
-        # [CHANGED] --> Added Tensorboard logging for training loss per epoch
         writer.add_scalar("train/loss", T_loss, epoch)
         writer.add_scalar("train/loss_Rec", T_loss_Rec, epoch)
         writer.add_scalar("train/loss_Dice", T_loss_Dice, epoch)
 
-        ### Validation phase [CHANGED] --> almost same as Train except the dice score is being calculated here as well
+        ### Validation phase
         ### Also note that the validation set is the same as the test set in the inference/valid.py file.
         for batch_data in tqdm(valid_dataloader, desc="Valid: "):
             img_rgb = batch_data["img"].to(device)
-            # print(img_rgb.max(), img_rgb.min(), img_rgb.shape) # [CHANGED] --> Debugging
             img_rgb = img_rgb / 255.0
             if configs['vae_model'] == 'tiny_vae':
                 img_rgb = 2.0 * img_rgb - 1.0
 
-            # print(img_rgb.max(), img_rgb.min(), img_rgb.shape)
 
             seg_raw = batch_data["seg"].to(device)
             seg_raw = seg_raw.permute(0, 3, 1, 2) / 255.0
@@ -346,7 +326,7 @@ def run_trainer() -> None:
                 else:
                     guidance_image = None
 
-                # latent matching [CHANGED] --> recieves the grountruth latent mask representation and predicted and computes mse loss
+                # latent matching
                 out_latent_mean_dict = mapping_model(img_latent_mean, guidance_image) if configs['guidance_method'] else mapping_model(img_latent_mean)
 
                 pred_seg = vae_decode(
