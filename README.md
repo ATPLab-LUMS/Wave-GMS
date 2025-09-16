@@ -1,4 +1,4 @@
-# Wavelet-guided Generative Medical Segmentation (AAAI 2025)
+# Wavelet-guided Generative Medical Segmentation (ICASSP 2026)
 
 This is the official repository of **Wave-GMS**, a wavelet-enhanced extension of Generative Medical Segmentation (GMS).
 
