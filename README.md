@@ -42,9 +42,9 @@ pip install -r requirements.txt
 ```
 
 ### Prepare datasets
-We evaluate GMS on four public datasets: [BUS](http://www2.docm.mmu.ac.uk/STAFF/M.Yap/dataset.php), [BUSI](https://scholar.cu.edu.eg/?q=afahmy/pages/dataset), [HAM10000](https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/DBW86T) and [Kvasir-Instrument](https://datasets.simula.no/kvasir-instrument/). The structure of the Datasets folder should be as follows:
+We evaluate GMS on four public datasets: [BUS](http://www2.docm.mmu.ac.uk/STAFF/M.Yap/dataset.php), [BUSI](https://scholar.cu.edu.eg/?q=afahmy/pages/dataset), [HAM10000](https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/DBW86T) and [Kvasir-Instrument](https://datasets.simula.no/kvasir-instrument/). The structure of the datasets folder should be as follows:
 ```
-Datasets/
+datasets/
 ├── bus
 │   ├── bus_train_test_names.pkl
 │   ├── images/
@@ -57,16 +57,15 @@ Datasets/
 │   ├── ham10000_train_test_names.pkl
 │   ├── images/
 │   └── masks/
-├── kvasir-instrument
-│   ├── kvasir_train_test_names.pkl
-│   ├── images/
-│   └── masks/
-└── show_pkl.py
+└── kvasir-instrument
+    ├── kvasir_train_test_names.pkl
+    ├── images/
+    └── masks/
 ```
-We provide the preprocessed **BUSI** and **Kvasir-Instrument** via [this link](https://emckclac-my.sharepoint.com/:f:/g/personal/k21066681_kcl_ac_uk/EmKNDZjEtg9EuBygBDyz4wIBKODtGJhzG2xdIy_NLf4VEA?e=whggsd), please download the dataset file and unzip it into the Datasets folder. For other datasets, please download them via the dataset websites and organize as the same structure. The `.pkl` file stores the train and test spilt for each dataset, you can run [`show_pkl.py`](Dataset/show_pkl.py) to show the content for each pkl file.
+We provide the preprocessed **BUSI** and **Kvasir-Instrument** via [this link](https://emckclac-my.sharepoint.com/:f:/g/personal/k21066681_kcl_ac_uk/EmKNDZjEtg9EuBygBDyz4wIBKODtGJhzG2xdIy_NLf4VEA?e=whggsd). Please download the dataset file and unzip it into the datasets folder. For other datasets, please download them via the dataset websites and organize as the same structure. The `.pkl` file stores the train and test spilt for each dataset.
 
 ### Model Inference
-We provide model weights for four datasets at [`ckpt`](ckpt) folder. Once all datasets are preprocessed, please run the following command for model inference:
+We provide model weights for four datasets at [`ckpt`](ckpt) folder. Once all datasets are preprocessed, please run the following inference command:
 ```
 sh valid.sh
 ```
@@ -77,7 +76,7 @@ Please run the following command for model training:
 ```
 sh train.sh
 ```
-To change hyperparameters (batch size, learning rate, training epochs, etc.), please refer to the dataset training yaml file (e.g., [BUSI training yaml](configs/busi_train.yaml)). We train Wave-GMS on an RTX 3060 GPU (12 GB) with the batch size set to 12. If you encounter the OOM problem, please try to decrease the batch size. 
+For hyperparameter-tuning, please refer to the dataset training yaml file (e.g., [BUSI training yaml](configs/busi_train.yaml)). We train Wave-GMS on an RTX 3060 GPU (12 GB) with a batch size of 12. If you encounter the OOM problem, please try to decrease the batch size. 
 
 ## Citation
 If you use this code for your research, please consider citing our paper.
