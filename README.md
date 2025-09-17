@@ -31,7 +31,7 @@ We combine LiteVAE with wavelet-guided latent mapping.
 - **Wavelet Guidance**: structural feature enhancement fused into the mapping model.  
 - **Latent Mapping Model (LMM)**: maps from image latent to segmentation latent.  
 
-![overview](assets/overview.png)
+![overview](assets/overview.svg)
 
 ---
 
