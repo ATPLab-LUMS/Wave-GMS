@@ -65,7 +65,7 @@ datasets/
 We provide the preprocessed **BUSI** and **Kvasir-Instrument** via [this link](https://emckclac-my.sharepoint.com/:f:/g/personal/k21066681_kcl_ac_uk/EmKNDZjEtg9EuBygBDyz4wIBKODtGJhzG2xdIy_NLf4VEA?e=whggsd). Please download the dataset file and unzip it into the datasets folder. For other datasets, please download them via the dataset websites and organize as the same structure. The `.pkl` file stores the train and test spilt for each dataset.
 
 ### Model Inference
-We provide model weights for four datasets at [`ckpt`](ckpt) folder. Once all datasets are preprocessed, please run the following inference command:
+We (will soon) provide model weights for four datasets at [`ckpt`](ckpt) folder. Once all datasets are preprocessed, please run the following inference command:
 ```
 sh valid.sh
 ```
@@ -76,7 +76,7 @@ Please run the following command for model training:
 ```
 sh train.sh
 ```
-For hyperparameter-tuning, please refer to the dataset training yaml file (e.g., [BUSI training yaml](configs/busi_train.yaml)). We train Wave-GMS on an RTX 3060 GPU (12 GB) with a batch size of 12. If you encounter the OOM problem, please try to decrease the batch size. 
+For hyperparameter-tuning, please refer to the (soon coming) dataset training yaml file (e.g., [BUSI training yaml](configs/busi_train.yaml)). We train Wave-GMS on an RTX 3060 GPU (12 GB) with a batch size of 12. If you encounter the OOM problem, please try to decrease the batch size. 
 
 ## Citation
 If you use this code for your research, please consider citing our paper.
