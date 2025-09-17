@@ -1,4 +1,4 @@
-# Wavelet-guided Generative Medical Segmentation (ICASSP 2026)
+# Wavelet-guided Generative Medical Segmentation
 
 This is the official repository of **Wave-GMS**, a wavelet-enhanced extension of Generative Medical Segmentation (GMS).
 
@@ -14,14 +14,11 @@ This is the official repository of **Wave-GMS**, a wavelet-enhanced extension of
 ---
 
 ## Introduction
-We introduce **Wavelet-guided Generative Medical Segmentation (Wave-GMS)**, an extension of GMS that leverages **LiteVAE** and **wavelet-based structural guidance** for improved segmentation.  
-Instead of relying only on the pre-trained Stable Diffusion VAE, Wave-GMS introduces:
+We introduce **Wavelet-guided Generative Medical Segmentation (Wave-GMS)**, an extension of GMS that leverages **LiteVAE** and **wavelet-based structural guidance** for improved segmentation. Instead of relying only on the pre-trained Stable Diffusion VAE, Wave-GMS introduces:
 - A lightweight **LiteVAE** encoder–decoder for efficiency.  
 - A **wavelet guidance mechanism** (via SKFF fusion) to capture structural information.  
 - Integration with existing latent mapping models (ResAttnUNet and SFT-UNet).  
-
-Our design reduces computation while enhancing segmentation quality, particularly in medical datasets with structural textures.  
-Extensive experiments across multiple public datasets show that **Wave-GMS achieves competitive Dice/IoU scores and superior SSIM-based similarity measures**.
+Our design reduces computation while enhancing segmentation quality, particularly in medical datasets with structural textures. Extensive experiments across multiple public datasets show that **Wave-GMS achieves competitive Dice, IoU, and HD95 scores**.
 
 ---
 
@@ -30,7 +27,6 @@ We combine LiteVAE with wavelet-guided latent mapping.
 - **LiteVAE**: lightweight encoder–decoder trained for medical segmentation tasks.
 - **Wavelet Guidance**: structural feature enhancement fused into the mapping model.
 - **Latent Mapping Model (LMM)**: maps from image latent to segmentation latent.
-
 ![overview](assets/overview.svg)
 
 ---
@@ -38,13 +34,7 @@ We combine LiteVAE with wavelet-guided latent mapping.
 ## Getting Started
 
 ### Environment Setup
-We provide a [conda env file](environment.yaml) that contains all dependencies.  
-You can create and activate the environment with:
-```bash
-conda env create -f environment.yaml
-conda activate Wave-GMS
-```
-Or use the virtual environment:
+We provide a requirements [file](requirements.txt) containing all dependencies. You can create and activate the virtual environment with:
 ```
 python3 -m venv wavegms
 source wavegms/bin/activate
@@ -75,22 +65,19 @@ Datasets/
 ```
 We provide the preprocessed **BUSI** and **Kvasir-Instrument** via [this link](https://emckclac-my.sharepoint.com/:f:/g/personal/k21066681_kcl_ac_uk/EmKNDZjEtg9EuBygBDyz4wIBKODtGJhzG2xdIy_NLf4VEA?e=whggsd), please download the dataset file and unzip it into the Datasets folder. For other datasets, please download them via the dataset websites and organize as the same structure. The `.pkl` file stores the train and test spilt for each dataset, you can run [`show_pkl.py`](Dataset/show_pkl.py) to show the content for each pkl file.
 
-
 ### Model Inference
 We provide model weights for four datasets at [`ckpt`](ckpt) folder. Once all datasets are preprocessed, please run the following command for model inference:
 ```
 sh valid.sh
 ```
-
-The DSC, IOU, and predicted masks will be automatically saved.
+The Dice, IoU, HD95, and predicted masks will be automatically saved.
 
 ### Model training
 Please run the following command for model training:
 ```
 sh train.sh
 ```
-
-To change hyperparameters (batch size, learning rate, training epochs, etc.), please refer to the dataset training yaml file (e.g., [BUSI training yaml](configs/busi_train.yaml)). We train GMS on an RTX 3060 GPU (12 GB) with the batch size set to 12. If you encounter the OOM problem, please try to decrease the batch size. 
+To change hyperparameters (batch size, learning rate, training epochs, etc.), please refer to the dataset training yaml file (e.g., [BUSI training yaml](configs/busi_train.yaml)). We train Wave-GMS on an RTX 3060 GPU (12 GB) with the batch size set to 12. If you encounter the OOM problem, please try to decrease the batch size. 
 
 ## Citation
 If you use this code for your research, please consider citing our paper.
@@ -104,4 +91,4 @@ If you use this code for your research, please consider citing our paper.
 ```
 
 ## Acknowledgments
-Thanks for the following code repositories: [TAESD](https://github.com/madebyollin/taesd) and [GMS](https://github.com/King-HAW/GMS)
+We thank the following code repositories: [TAESD](https://github.com/madebyollin/taesd) and [GMS](https://github.com/King-HAW/GMS).
