@@ -21,7 +21,7 @@ We introduce **Wave-GMS**, an extension of GMS that leverages multi-scale repres
 - A multi-scale wavelet decomposition encoder with a frozen [Tiny-VAE](https://github.com/madebyollin/taesd) decoder, yielding a highly memory-efficient design.  
 - An alignment loss in the latent space to facilitate cross-vae compatibility between multi-resolution encoder & Tiny-VAE.  
 - Integration with existing latent mapping models ([ResAttnUNet_DS](https://github.com/King-HAW/GMS) and SFT_UNet_DS -- Their scripts will be made avaialble soon!).
-- 
+  
 Our model is highly memory efficient with a total trainable parameter count of ~2.60M and can be trained on low-end GPU's like RTX 3060 (12GB) or RTX 2080Ti (11GB). Extensive experiments across multiple public datasets show that **Wave-GMS achieves competitive Dice, IoU, and HD95 scores**.
 
 ---
