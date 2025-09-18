@@ -6,10 +6,10 @@ guidance_method: False
 vae_model: litevae              # options: litevae, tiny_vae
 pickle_file_path: ./Dataset/bus/bus_train_test_names.pkl
 
-# Paths (update placeholders when running experiments)
-model_weight: ./ckpt/PLACEHOLDER/best_model.pth
-snapshot_path: ./ckpt/PLACEHOLDER/valid_results # contains csv
-save_seg_img_path: ./ckpt/PLACEHOLDER/predicted_masks
+# Paths (update experiment_names and epochs_{epoch_num}/ when running experiments)
+model_weight: ./ckpt/experiment_name/epochs_{epoch_num}/best_model.pth
+snapshot_path: ./ckpt/experiment_name/epochs_{epoch_num}/valid_results_bus # contains csv
+save_seg_img_path: ./ckpt/experiment_name/epochs_{epoch_num}/predicted_masks_bus
 
 # ===============================
 # Validation Settings

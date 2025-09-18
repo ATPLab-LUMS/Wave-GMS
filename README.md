@@ -1,36 +1,37 @@
 # Wave-GMS: Lightweight Multi-Scale Generative Model for Medical Image Segmentation
 
-!! Disclaimer !!
-This work and much of the code has been inspired/adapted/borrowed from the [GMS](https://github.com/King-HAW/GMS).
+⚠️ **Disclaimer**  
+This work and much of the code has been adapted or extended from the original [GMS repository](https://github.com/King-HAW/GMS).
 
-This is the official repository of **Wave-GMS**: ightweight Multi-Scale Generative Model for Medical Image Segmentation.
+This is the official repository of **Wave-GMS**: a lightweight multi-scale generative model for medical image segmentation.
 
-Paper | Weights (Both available soon!)
+**Paper | Weights (Coming Soon!)**
 
 ---
 
 ## Updates
-- **2025.09.17**: Wave-GMS released as an extension to GMS with Multi-Resolution Encoder Integration.
-- **2024.12.09**: Original [GMS](https://github.com/King-HAW/GMS) work published AAAI 2025.
-- **2024.05.13**: GMS code and model weights released.
+- **2025.09.17**: Wave-GMS released as an extension to GMS with multi-resolution encoder integration.  
+- **2024.12.09**: Original [GMS](https://github.com/King-HAW/GMS) accepted at AAAI 2025.  
+- **2024.05.13**: GMS code and model weights released.  
 
 ---
 
 ## Introduction
-We introduce **Wave-GMS**, an extension of GMS that leverages multi-scale representations and lightweight pre-trained models for improved segmentation. Instead of relying only on the pre-trained [Stable Diffusion VAE](https://github.com/Stability-AI/stablediffusion), Wave-GMS introduces:
-- A multi-scale wavelet decomposition encoder with a frozen [Tiny-VAE](https://github.com/madebyollin/taesd) decoder, yielding a highly memory-efficient design.  
-- An alignment loss in the latent space to facilitate cross-vae compatibility between multi-resolution encoder & Tiny-VAE.  
-- Integration with existing latent mapping models ([ResAttnUNet_DS](https://github.com/King-HAW/GMS) and SFT_UNet_DS -- Their scripts will be made avaialble soon!).
-  
-Our model is highly memory efficient with a total trainable parameter count of ~2.60M and can be trained on low-end GPU's like RTX 3060 (12GB) or RTX 2080Ti (11GB). Extensive experiments across multiple public datasets show that **Wave-GMS achieves competitive Dice, IoU, and HD95 scores**.
+We introduce **Wave-GMS**, an extension of GMS that leverages multi-scale representations and lightweight pre-trained models for improved segmentation. Instead of relying solely on the pre-trained [Stable Diffusion VAE](https://github.com/Stability-AI/stablediffusion), Wave-GMS introduces:
+- A multi-scale wavelet decomposition encoder coupled with a frozen [Tiny-VAE](https://github.com/madebyollin/taesd) decoder, yielding a highly memory-efficient design.  
+- An alignment loss in the latent space to ensure compatibility between the multi-resolution encoder and Tiny-VAE.  
+- Integration with existing latent mapping models ([ResAttnUNet_DS](https://github.com/King-HAW/GMS) and SFT_UNet_DS — scripts will be made available soon).  
+
+Our model is highly memory-efficient, with only ~2.6M trainable parameters, and can be trained on low_end GPUs such as the RTX 3060 (12GB) or RTX 2080Ti (11GB). Extensive experiments on multiple public datasets demonstrate that **Wave-GMS achieves competitive Dice, IoU, and HD95 scores** while being lightweight and efficient.  
 
 ---
 
 ## Overview of Wave-GMS
-- It uses a trainable encoder multi-resolution encoder inspired by [Paper](https://arxiv.org/abs/2405.14477) to create high-quality latent representation from a multi-resolution Haar Wavelet decomposition of input image.
-- The model leverages a compressed version of SD-VAE, Tiny-VAE, to generate latent representations of input image and segmentation mask.
-- A Latent Mapping Model (LMM) learns the mapping from multi-resolution latent representation of input image to the corresponding mask representation
-- Multi-resolution latents are aligned with Tiny-VAE’s latents to improve cross-VAE compatibility.
+- A trainable multi-resolution encoder, inspired by [this work](https://arxiv.org/abs/2405.14477), creates high-quality latent representations from a Haar wavelet decomposition of the input image.  
+- A compressed distilled version of SD-VAE (Tiny-VAE) generates latent representations of both the input image and segmentation mask.  
+- A Latent Mapping Model (LMM) learns the mapping from the multi-resolution latent space of the input image to the corresponding mask representation.  
+- Multi-resolution latents are aligned with Tiny-VAE’s latents to improve cross-VAE compatibility.  
+
 ![overview](assets/overview.svg)
 
 ---
@@ -38,8 +39,9 @@ Our model is highly memory efficient with a total trainable parameter count of ~
 ## Getting Started
 
 ### Environment Setup
-We provide a requirements [file](requirements.txt) containing all dependencies. You can create and activate the virtual environment with:
-```
+We provide a [requirements file](requirements.txt) containing all dependencies. You can create and activate a virtual environment with:
+
+```bash
 python3 -m venv wavegms
 source wavegms/bin/activate
 pip install -r requirements.txt
@@ -66,15 +68,21 @@ datasets/
     ├── images/
     └── masks/
 ```
-The `{dataset_name}_train_test_names.pkl` is a pickle file containing the train & test split for each dataset. It has two nested dictionaries (The first level dict is 'train' & 'test') and each of those has a sub dict with the key 'name_list'. The name list only covers the image names. The mask names can be found from a slight modification (if any) in the image names like '_segmentation' for HAM10000, etc. 
-The preprocessed **BUSI** and **Kvasir-Instrument** datasets can be accessed through the original GMS repository. Please download the dataset file and unzip it into the datasets folder. For other datasets, please download them via the dataset websites and organize as the same structure.
+Each `{dataset_name}_train_test_names.pkl` contains the train/test splits in the form of nested dictionaries (train and test), each with a name_list key. These lists cover image filenames. Masks follow the same names with small modifications (e.g., _segmentation suffix in HAM10000).
+The preprocessed **BUSI** and **Kvasir-Instrument** datasets can be obtained through the original GMS repository. Please download the dataset file and unzip it into the datasets folder. For other datasets, please download them via the dataset websites and organize as the same structure.
 
 ### Model Inference
 We (will soon) provide the inference script and model weights for four datasets at [`ckpt/provided_models`](ckpt) folder. Once all datasets are preprocessed, please run the following inference command:
 ```
 sh valid.sh
 ```
-The Dice, IoU, HD95 (calculated by script [`utils/metrics.py`] - available soon), and predicted masks will be automatically saved. The predicted masks (binary & logits) will be saved in the folder `./ckpt/experiment_name/epochs_{epoch_num}/predicted_masks_{dataset_name}` while the csv file containing the metrics against each patient in the dataset will be saved in `./ckpt/experiment_name/epochs_{epoch_num}/valid_results_{dataset_name}`
+Metrics (Dice, IoU, HD95 — computed using [`utils/metrics.py`], coming soon) and predicted masks will be automatically saved.
+
+- **Predicted masks (binary & logits):**  
+  `./ckpt/experiment_name/epochs_{epoch_num}/predicted_masks_{dataset_name}`
+
+- **Metrics CSV file:**  
+  `./ckpt/experiment_name/epochs_{epoch_num}/valid_results_{dataset_name}`
 
 ### Model training
 We (will soon) provide the training script. Please run the following command for model training:
@@ -86,7 +94,14 @@ For hyperparameter-tuning, please refer to the dataset training yaml file (e.g.,
 ## Citation
 If you use this code for your research, please consider citing this github page:
 
-@misc{ATPLab-LUMS_2025, title={ATPLab-lums/wave-GMS: [submitted to ICASSP 2026] official repository of wave-GMS: Lightweight Multi-Scale Generative Model for medical image segmentation}, url={https://github.com/ATPLab-LUMS/Wave-GMS/tree/main}, journal={GitHub}, author={ATPLab-LUMS, Talha Ahmed}, year={2025}, month={Sep}} 
+@misc{ATPLab-LUMS_2025,
+  title   = {ATPLab-lums/wave-GMS: [submitted to ICASSP 2026] official repository of Wave-GMS: Lightweight Multi-Scale Generative Model for Medical Image Segmentation},
+  url     = {https://github.com/ATPLab-LUMS/Wave-GMS/tree/main},
+  journal = {GitHub},
+  author  = {ATPLab-LUMS and Talha Ahmed},
+  year    = {2025},
+  month   = {Sep}
+}
 
 ## Acknowledgments
 We thank the following code repositories: [TAESD](https://github.com/madebyollin/taesd) and [GMS](https://github.com/King-HAW/GMS).
