@@ -70,7 +70,7 @@ The `{dataset_name}_train_test_names.pkl` is a pickle file containing the train 
 The preprocessed **BUSI** and **Kvasir-Instrument** datasets can be accessed through the original GMS repository. Please download the dataset file and unzip it into the datasets folder. For other datasets, please download them via the dataset websites and organize as the same structure.
 
 ### Model Inference
-We (will soon) provide the inference script and model weights for four datasets at [`ckpt`](ckpt) folder. Once all datasets are preprocessed, please run the following inference command:
+We (will soon) provide the inference script and model weights for four datasets at [`ckpt/provided_models`](ckpt) folder. Once all datasets are preprocessed, please run the following inference command:
 ```
 sh valid.sh
 ```
