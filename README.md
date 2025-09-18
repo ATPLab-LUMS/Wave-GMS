@@ -1,4 +1,7 @@
-# Wavelet-guided Generative Medical Segmentation
+# Wave-GMS: Lightweight Multi-Scale Generative Model for Medical Image Segmentation
+
+!! Disclaimer !!
+This work and much of the code has been inspired/adapted/borrowed from the [GMS](https://github.com/King-HAW/GMS).
 
 This is the official repository of **Wave-GMS**: ightweight Multi-Scale Generative Model for Medical Image Segmentation.
 
