@@ -67,7 +67,7 @@ datasets/
     └── masks/
 ```
 The `{dataset_name}_train_test_names.pkl` is a pickle file containing the train & test split for each dataset. It has two nested dictionaries (The first level dict is 'train' & 'test') and each of those has a sub dict with the key 'name_list'. The name list only covers the image names. The mask names can be found from a slight modification (if any) in the image names like '_segmentation' for HAM10000, etc. 
-The preprocessed **BUSI** and **Kvasir-Instrument** can be through the original GMS repository. Please download the dataset file and unzip it into the datasets folder. For other datasets, please download them via the dataset websites and organize as the same structure.
+The preprocessed **BUSI** and **Kvasir-Instrument** datasets can be accessed through the original GMS repository. Please download the dataset file and unzip it into the datasets folder. For other datasets, please download them via the dataset websites and organize as the same structure.
 
 ### Model Inference
 We (will soon) provide the inference script and model weights for four datasets at [`ckpt`](ckpt) folder. Once all datasets are preprocessed, please run the following inference command:
