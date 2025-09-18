@@ -84,7 +84,9 @@ sh train.sh
 For hyperparameter-tuning, please refer to the dataset training yaml file (e.g., [BUSI training yaml](configs/busi_train.yaml)). We train Wave-GMS on an RTX 3060 GPU (12 GB) with a batch size of 12. If you encounter the OOM problem, please try to decrease the batch size. 
 
 ## Citation
-If you use this code for your research, please consider citing this github page.
+If you use this code for your research, please consider citing this github page:
+
+@misc{ATPLab-LUMS_2025, title={ATPLab-lums/wave-GMS: [submitted to ICASSP 2026] official repository of wave-GMS: Lightweight Multi-Scale Generative Model for medical image segmentation}, url={https://github.com/ATPLab-LUMS/Wave-GMS/tree/main}, journal={GitHub}, author={ATPLab-LUMS, Talha Ahmed}, year={2025}, month={Sep}} 
 
 ## Acknowledgments
 We thank the following code repositories: [TAESD](https://github.com/madebyollin/taesd) and [GMS](https://github.com/King-HAW/GMS).
