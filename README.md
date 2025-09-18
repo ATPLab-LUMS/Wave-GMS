@@ -103,6 +103,6 @@ If you use this code for your research, please consider citing this GitHub page:
   year    = {2025},
   month   = {Sep}
 }
-
+```
 ## Acknowledgments
 We thank the following code repositories: [TAESD](https://github.com/madebyollin/taesd) and [GMS](https://github.com/King-HAW/GMS).
