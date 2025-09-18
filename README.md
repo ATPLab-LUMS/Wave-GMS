@@ -1,32 +1,33 @@
 # Wavelet-guided Generative Medical Segmentation
 
-This is the official repository of **Wave-GMS**, a wavelet-enhanced extension of Generative Medical Segmentation (GMS).
+This is the official repository of **Wave-GMS**: ightweight Multi-Scale Generative Model for Medical Image Segmentation.
 
-[Paper](https://arxiv.org/pdf/2403.18198.pdf) | [Weights](ckpt)
+Paper | Weights (Both available soon!)
 
 ---
 
 ## Updates
-- **2025.01.10**: Wave-GMS released as an extension to GMS with LiteVAE integration.
-- **2024.12.09**: Original GMS work accepted by AAAI 2025.
+- **2025.09.17**: Wave-GMS released as an extension to GMS with Multi-Resolution Encoder Integration.
+- **2024.12.09**: Original [GMS](https://github.com/King-HAW/GMS) work published AAAI 2025.
 - **2024.05.13**: GMS code and model weights released.
 
 ---
 
 ## Introduction
-We introduce **Wavelet-guided Generative Medical Segmentation (Wave-GMS)**, an extension of GMS that leverages **LiteVAE** and **wavelet-based structural guidance** for improved segmentation. Instead of relying only on the pre-trained Stable Diffusion VAE, Wave-GMS introduces:
-- A lightweight **LiteVAE** encoder–decoder for efficiency.  
-- A **wavelet guidance mechanism** (via SKFF fusion) to capture structural information.  
-- Integration with existing latent mapping models (ResAttnUNet and SFT-UNet).  
-Our design reduces computation while enhancing segmentation quality, particularly in medical datasets with structural textures. Extensive experiments across multiple public datasets show that **Wave-GMS achieves competitive Dice, IoU, and HD95 scores**.
+We introduce **Wave-GMS**, an extension of GMS that leverages multi-scale representations and lightweight pre-trained models for improved segmentation. Instead of relying only on the pre-trained [Stable Diffusion VAE](https://github.com/Stability-AI/stablediffusion), Wave-GMS introduces:
+- A multi-scale wavelet decomposition encoder with a frozen [Tiny-VAE](https://github.com/madebyollin/taesd) decoder, yielding a highly memory-efficient design.  
+- An alignment loss in the latent space to facilitate cross-vae compatibility between multi-resolution encoder & Tiny-VAE.  
+- Integration with existing latent mapping models ([ResAttnUNet_DS](https://github.com/King-HAW/GMS) and SFT_UNet_DS -- Their scripts will be made avaialble soon!).
+- 
+Our model is highly memory efficient with a total trainable parameter count of ~2.60M and can be trained on low-end GPU's like RTX 3060 (12GB) or RTX 2080Ti (11GB). Extensive experiments across multiple public datasets show that **Wave-GMS achieves competitive Dice, IoU, and HD95 scores**.
 
 ---
 
 ## Overview of Wave-GMS
-We combine LiteVAE with wavelet-guided latent mapping.
-- **LiteVAE**: lightweight encoder–decoder trained for medical segmentation tasks.
-- **Wavelet Guidance**: structural feature enhancement fused into the mapping model.
-- **Latent Mapping Model (LMM)**: maps from image latent to segmentation latent.
+- It uses a trainable encoder multi-resolution encoder inspired by [Paper](https://arxiv.org/abs/2405.14477) to create high-quality latent representation from a multi-resolution Haar Wavelet decomposition of input image.
+- The model leverages a compressed version of SD-VAE, Tiny-VAE, to generate latent representations of input image and segmentation mask.
+- A Latent Mapping Model (LMM) learns the mapping from multi-resolution latent representation of input image to the corresponding mask representation
+- Multi-resolution latents are aligned with Tiny-VAE’s latents to improve cross-VAE compatibility.
 ![overview](assets/overview.svg)
 
 ---
@@ -62,32 +63,25 @@ datasets/
     ├── images/
     └── masks/
 ```
-We provide the preprocessed **BUSI** and **Kvasir-Instrument** via [this link](https://emckclac-my.sharepoint.com/:f:/g/personal/k21066681_kcl_ac_uk/EmKNDZjEtg9EuBygBDyz4wIBKODtGJhzG2xdIy_NLf4VEA?e=whggsd). Please download the dataset file and unzip it into the datasets folder. For other datasets, please download them via the dataset websites and organize as the same structure. The `.pkl` file stores the train and test spilt for each dataset.
+The `{dataset_name}_train_test_names.pkl` is a pickle file containing the train & test split for each dataset. It has two nested dictionaries (The first level dict is 'train' & 'test') and each of those has a sub dict with the key 'name_list'. The name list only covers the image names. The mask names can be found from a slight modification (if any) in the image names like '_segmentation' for HAM10000, etc. 
+The preprocessed **BUSI** and **Kvasir-Instrument** can be through the original GMS repository. Please download the dataset file and unzip it into the datasets folder. For other datasets, please download them via the dataset websites and organize as the same structure.
 
 ### Model Inference
-We (will soon) provide model weights for four datasets at [`ckpt`](ckpt) folder. Once all datasets are preprocessed, please run the following inference command:
+We (will soon) provide the inference script and model weights for four datasets at [`ckpt`](ckpt) folder. Once all datasets are preprocessed, please run the following inference command:
 ```
 sh valid.sh
 ```
-The Dice, IoU, HD95, and predicted masks will be automatically saved.
+The Dice, IoU, HD95 (calculated by script [`utils/metrics.py`] - available soon), and predicted masks will be automatically saved. The predicted masks (binary & logits) will be saved in the folder `./ckpt/experiment_name/epochs_{epoch_num}/predicted_masks_{dataset_name}` while the csv file containing the metrics against each patient in the dataset will be saved in `./ckpt/experiment_name/epochs_{epoch_num}/valid_results_{dataset_name}`
 
 ### Model training
-Please run the following command for model training:
+We (will soon) provide the training script. Please run the following command for model training:
 ```
 sh train.sh
 ```
-For hyperparameter-tuning, please refer to the (soon coming) dataset training yaml file (e.g., [BUSI training yaml](configs/busi_train.yaml)). We train Wave-GMS on an RTX 3060 GPU (12 GB) with a batch size of 12. If you encounter the OOM problem, please try to decrease the batch size. 
+For hyperparameter-tuning, please refer to the dataset training yaml file (e.g., [BUSI training yaml](configs/busi_train.yaml)). We train Wave-GMS on an RTX 3060 GPU (12 GB) with a batch size of 12. If you encounter the OOM problem, please try to decrease the batch size. 
 
 ## Citation
-If you use this code for your research, please consider citing our paper.
-```
-@article{wavegms2025,
-  title={Wavelet-guided Generative Medical Segmentation},
-  author={Talha Ahmed, Nehal Ahmed Shaikh, and Hassan Mohy Ud Din},
-  journal={arXiv preprint arXiv:XXXX.XXXXX},
-  year={2025}
-}
-```
+If you use this code for your research, please consider citing this github page.
 
 ## Acknowledgments
 We thank the following code repositories: [TAESD](https://github.com/madebyollin/taesd) and [GMS](https://github.com/King-HAW/GMS).
