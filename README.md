@@ -96,7 +96,7 @@ If you use this code for your research, please consider citing this GitHub page:
 
 ```bibtex
 @misc{ATPLab-LUMS_2025,
-  title   = {ATPLab-lums/wave-GMS: [submitted to ICASSP 2026] official repository of Wave-GMS: Lightweight Multi-Scale Generative Model for Medical Image Segmentation},
+  title   = {ATPLab-lums/wave-GMS: Official repository of Wave-GMS: Lightweight Multi-Scale Generative Model for Medical Image Segmentation},
   url     = {https://github.com/ATPLab-LUMS/Wave-GMS/tree/main},
   journal = {GitHub},
   author  = {ATPLab-LUMS and Talha Ahmed},
