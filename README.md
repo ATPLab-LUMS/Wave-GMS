@@ -5,7 +5,7 @@ This work and much of the code has been adapted or extended from the original [G
 
 This is the official repository of **Wave-GMS**: a lightweight multi-scale generative model for medical image segmentation.
 
-**Paper | Weights (Coming Soon!)**
+**[Paper](https://arxiv.org/abs/2510.03216v1) | Weights (Coming Soon!)**
 
 ---
 
