@@ -92,7 +92,7 @@ sh train.sh
 For hyperparameter-tuning, please refer to the dataset training yaml file (e.g., [BUSI training yaml](configs/busi_train.yaml)). We train Wave-GMS on an RTX 3060 GPU (12 GB) with a batch size of 12. If you encounter the OOM problem, please try to decrease the batch size. 
 
 ## Citation
-If you use this code for your research, please consider citing this GitHub page:
+If you use this code for your research, please consider citing the paper:
 
 ```bibtex
 @misc{ahmed2025wavegmslightweightmultiscalegenerative,
