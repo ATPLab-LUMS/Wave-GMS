@@ -82,7 +82,7 @@ Metrics (Dice, IoU, HD95 — computed using [`utils/metrics.py`], coming soon) a
   `./ckpt/experiment_name/epochs_{epoch_num}/predicted_masks_{dataset_name}`
 
 - **Metrics CSV file:**  
-  `./ckpt/experiment_name/epochs_{epoch_num}/valid_results_{dataset_name}`
+  `./ckpt/experiment_name/epochs_{epoch_num}/log_csv_{dataset_name}`
 
 ### Model training
 We (will soon) provide the training script. Please run the following command for model training:
@@ -95,13 +95,14 @@ For hyperparameter-tuning, please refer to the dataset training yaml file (e.g.,
 If you use this code for your research, please consider citing this GitHub page:
 
 ```bibtex
-@misc{ATPLab-LUMS_2025,
-  title   = {ATPLab-lums/wave-GMS: Official repository of Wave-GMS: Lightweight Multi-Scale Generative Model for Medical Image Segmentation},
-  url     = {https://github.com/ATPLab-LUMS/Wave-GMS/tree/main},
-  journal = {GitHub},
-  author  = {ATPLab-LUMS and Talha Ahmed},
-  year    = {2025},
-  month   = {Sep}
+@misc{ahmed2025wavegmslightweightmultiscalegenerative,
+      title={Wave-GMS: Lightweight Multi-Scale Generative Model for Medical Image Segmentation}, 
+      author={Talha Ahmed and Nehal Ahmed Shaikh and Hassan Mohy-ud-Din},
+      year={2025},
+      eprint={2510.03216},
+      archivePrefix={arXiv},
+      primaryClass={eess.IV},
+      url={https://arxiv.org/abs/2510.03216}, 
 }
 ```
 ## Acknowledgments
