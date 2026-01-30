@@ -10,9 +10,10 @@ This is the official repository of **Wave-GMS**: a lightweight multi-scale gener
 ---
 
 ## Updates
-- **2025.09.17**: Wave-GMS released as an extension to GMS with multi-resolution encoder integration.  
-- **2024.12.09**: Original [GMS](https://github.com/King-HAW/GMS) accepted at AAAI 2025.  
-- **2024.05.13**: GMS code and model weights released.  
+- **2026.01.22**: Wave-GMS accepted at IEEE ICASSP 2026.
+- **2025.09.17**: Wave-GMS released as an extension to GMS with multi-resolution encoder integration.
+- **2024.12.09**: Original [GMS](https://github.com/King-HAW/GMS) accepted at AAAI 2025.
+- **2024.05.13**: GMS code and model weights released.
 
 ---
 
